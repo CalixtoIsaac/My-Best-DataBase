@@ -1,0 +1,138 @@
+:root {
+  --bg-dark: #0f1016;
+  --bg-main: #14151f;
+  --bg-card: #1c1d2a;
+  --bg-input: #12131c;
+  --accent-color: #007acc;
+  --accent-hover: #005999;
+  --border-color: rgba(255, 255, 255, 0.08);
+  --text-main: #f0f0f5;
+  --text-muted: #8a8a9e;
+  --error-color: #ff4d4d;
+  --error-bg: rgba(255, 77, 77, 0.12);
+  --success-color: #2ed573;
+  --success-bg: rgba(46, 213, 115, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+body {
+  background-color: #0a0b10;
+  color: var(--text-main);
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ==========================================
+   BOTONES Y COMPONENTES GENERALES
+   ========================================== */
+.btn {
+  background-color: var(--bg-card);
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.btn-primary {
+  background-color: var(--accent-color);
+  border-color: var(--accent-color);
+  color: #ffffff;
+}
+
+.btn-primary:hover {
+  background-color: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+/* CAMPOS DE FORMULARIO REUTILIZABLES */
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-group label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+.form-control {
+  background: rgba(10, 11, 16, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-main);
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.form-control:focus {
+  border-color: var(--accent-color);
+  box-shadow: 0 0 8px rgba(0, 122, 204, 0.3);
+}
+
+/* VENTANAS MODALES */
+/* Corrección para modales */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.7);
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+  display: none; 
+}
+
+.modal {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 20px;
+  width: 460px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+}
+
+.modal-header {
+  font-weight: bold;
+  font-size: 15px;
+  margin-bottom: 12px;
+  color: var(--text-main);
+}
+
+.modal-body {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 18px;
+  line-height: 1.4;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

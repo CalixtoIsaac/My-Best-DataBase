@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Best DataBase - Iniciar Sesión</title>
+  
+  <!-- Fuente Modern Gold Display (Outfit) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@700;800;900&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="css/global.css">
+  <link rel="stylesheet" href="css/login.css">
+</head>
+<body>
+
+  <!-- ==========================================
+       PANTALLA DE AUTENTICACIÓN
+       ========================================== -->
+  <div class="auth-overlay" id="authOverlay">
+    
+    <!-- FONDO INTERACTIVO (Sin reflector de mouse) -->
+    <div class="auth-bg-interactive">
+      <canvas id="bgCanvas"></canvas>
+      <div class="cyber-grid"></div>
+
+      <!-- Textos Decorativos Tech -->
+      <div class="floating-sql-text text-top-left">CREATE DATABASE MyFirstDB;</div>
+      <div class="floating-sql-text text-top-right">SELECT * FROM clients WHERE active = 1;</div>
+      <div class="floating-sql-text text-bottom-right">INNER JOIN analytics ON data.id</div>
+    </div>
+
+    <!-- TARJETA GLASSMORPHISM -->
+    <div class="auth-card">
+      <!-- ENCABEZADO -->
+      <div class="auth-header">
+        <div class="auth-brand">My Best DataBase</div>
+        <div class="auth-badge-container">
+          <span class="brand-badge">SQL|JSON|CSV|XLS</span>
+        </div>
+        <div class="auth-subtitle">Enterprise Data Studio & Management</div>
+      </div>
+
+      <!-- Pestañas de Autenticación -->
+      <div class="auth-tabs">
+        <button class="auth-tab-btn active" id="tabBtnLogin" onclick="switchAuthTab('login')">Login</button>
+        <button class="auth-tab-btn" id="tabBtnRegister" onclick="switchAuthTab('register')">Register</button>
+      </div>
+
+      <!-- Alerta de Notificaciones -->
+      <div class="auth-alert" id="authAlert"></div>
+
+      <!-- FORMULARIO 1: LOGIN -->
+      <form id="loginForm" class="auth-form" onsubmit="handleLogin(event)">
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" id="loginEmail" class="form-control" placeholder="user@domain.com" required>
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="loginPassword" class="form-control" placeholder="••••••••" required>
+        </div>
+        <button type="submit" class="btn-submit">Enter the Studio ➔</button>
+      </form>
+
+      <!-- FORMULARIO 2: REGISTRO PASO 1 -->
+      <form id="registerStep1Form" class="auth-form" style="display: none;" onsubmit="handleSendCode(event)">
+        <div class="form-group">
+          <label>Username</label>
+          <input type="text" id="regName" class="form-control" placeholder="Enter your username" oninput="this.value = this.value.toUpperCase()" style="text-transform: uppercase;" required>
+        </div>
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" id="regEmail" class="form-control" placeholder="user@domain.com" required>
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="regPassword" class="form-control" placeholder="Minimum 6 characters" minlength="6" required>
+        </div>
+        <div class="form-group">
+          <label>Confirm Password</label>
+          <input type="password" id="regConfirmPassword" class="form-control" placeholder="Repeat your password" minlength="6" required>
+        </div>
+        <button type="submit" class="btn-submit">Continue and Send Code ➔</button>
+      </form>
+
+      <!-- FORMULARIO 3: REGISTRO PASO 2 (OTP) -->
+      <form id="registerStep2Form" class="auth-form" style="display: none;" onsubmit="handleRegister(event)">
+        <div class="form-group">
+          <label style="text-align: center;">Verification Code (6 digits)</label>
+          <input type="text" id="regCode" class="form-control" placeholder="123456" maxlength="6" style="text-align: center; font-size: 22px; letter-spacing: 6px; font-weight: bold;" required>
+        </div>
+        <button type="submit" class="btn-submit">Verify and Create Account</button>
+        <button type="button" class="btn" style="margin-top: 6px;" onclick="backToStep1()">← Change Email</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="js/auth.js"></script>
+</body>
+</html>

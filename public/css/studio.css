@@ -1,0 +1,269 @@
+/* ==========================================
+   ESTRUCTURA DE LA APLICACIÓN PRINCIPAL (STUDIO)
+   ========================================== */
+.app-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  opacity: 1;             /* Cambiado de 0.2 a 1 */
+  pointer-events: all;    /* Cambiado de none a all */
+  transition: opacity 0.3s ease;
+}
+
+/* Puedes eliminar o conservar este bloque, ya no afectará */
+.app-container.unlocked {
+  opacity: 1;
+  pointer-events: all;
+}
+
+.app-header {
+  height: 42px;
+  background: var(--bg-dark);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+}
+
+.brand {
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.user-profile {
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.action-toolbar {
+  height: 42px;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  gap: 8px;
+}
+
+.workspace {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* BARRA LATERAL (EXPLORADOR) */
+.sidebar {
+  width: 250px;
+  background: var(--bg-dark);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-header {
+  padding: 10px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.search-input {
+  width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  outline: none;
+}
+
+.search-input:focus {
+  border-color: var(--accent-color);
+}
+
+.tree-view {
+  flex: 1;
+  padding: 10px 12px;
+  overflow-y: auto;
+}
+
+.main-stage {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-main);
+  overflow: hidden;
+}
+
+/* ==========================================
+   PESTAÑAS Y EDITOR SQL
+   ========================================== */
+.tab-bar {
+  height: 36px;
+  background: var(--bg-dark);
+  display: flex;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.tab {
+  padding: 0 16px;
+  font-size: 12px;
+  color: var(--text-muted);
+  border-right: 1px solid var(--border-color);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  background: var(--bg-dark);
+  transition: all 0.2s;
+}
+
+.tab.active {
+  background: var(--bg-main);
+  color: var(--text-main);
+  border-top: 2px solid var(--accent-color);
+}
+
+.tab-content {
+  display: none;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.tab-content.active {
+  display: flex;
+}
+
+.editor-pane {
+  flex: 1;
+  display: flex;
+  background: var(--bg-main);
+  overflow: hidden;
+}
+
+.line-numbers {
+  width: 42px;
+  padding: 10px 0;
+  text-align: center;
+  color: var(--text-muted);
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 13px;
+  border-right: 1px solid var(--border-color);
+  user-select: none;
+  background: var(--bg-dark);
+}
+
+.code-editor {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-main);
+  padding: 10px 14px;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 13px;
+  resize: none;
+  outline: none;
+  line-height: 1.5;
+}
+
+/* ==========================================
+   PANEL DE RESULTADOS Y LOGS
+   ========================================== */
+.results-pane {
+  height: 240px;
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-dark);
+  display: flex;
+  flex-direction: column;
+}
+
+.results-navbar {
+  display: flex;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.results-tab {
+  padding: 8px 14px;
+  font-size: 11px;
+  font-weight: bold;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-right: 1px solid var(--border-color);
+}
+
+.results-tab.active {
+  color: var(--accent-color);
+  background: var(--bg-dark);
+}
+
+.data-grid-container {
+  flex: 1;
+  overflow: auto;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  text-align: left;
+}
+
+.data-table th, .data-table td {
+  border: 1px solid var(--border-color);
+  padding: 6px 12px;
+  white-space: nowrap;
+}
+
+.data-table th {
+  background: var(--bg-card);
+  color: var(--text-muted);
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+}
+
+.log-container {
+  flex: 1;
+  padding: 12px;
+  font-family: 'Consolas', monospace;
+  font-size: 12px;
+  overflow-y: auto;
+  display: none;
+}
+
+.log-entry {
+  margin-bottom: 6px;
+  color: var(--text-muted);
+}
+
+.log-entry.success { color: var(--success-color); }
+.log-entry.error { color: var(--error-color); }
+.log-entry.info { color: var(--accent-color); }
+
+/* ==========================================
+   DIAGRAMA ER Y ESTADO
+   ========================================== */
+.diagram-canvas {
+  flex: 1;
+  background: var(--bg-main);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.status-bar {
+  height: 24px;
+  background: var(--accent-color);
+  color: #ffffff;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  font-weight: 500;
+}
