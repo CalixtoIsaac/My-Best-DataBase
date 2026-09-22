@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,13 +8,14 @@
   <link rel="stylesheet" href="css/global.css">
   <link rel="stylesheet" href="css/studio.css">
 </head>
+
 <body>
 
   <!-- ==========================================
        ESTRUCTURA PRINCIPAL DE LA APLICACIÓN (STUDIO)
        ========================================== -->
   <div class="app-container" id="appContainer">
-    
+
     <!-- Barra Superior / Nombre de App y Perfil -->
     <header class="app-header">
       <div class="brand">My Best <strong>DataBase</strong></div>
@@ -25,18 +27,26 @@
 
     <!-- Barra de Herramientas Principal -->
     <div class="action-toolbar">
-      <button class="btn btn-primary" onclick="runCurrentQuery()">▶ Ejecutar SQL</button>
+      <button class="btn btn-primary" title="Ejecutar todo el script (Ctrl + Enter / F5)"
+        onclick="runScriptQuery(false)">▶ Ejecutar Todo <small style="opacity: 0.7; font-size: 10px;">
+          (Ctrl+Enter)</small></button>
+      <button class="btn" style="background: #0284c7; color: #ffffff;"
+        title="Ejecutar solo el texto seleccionado con el mouse (Ctrl + Shift + Enter)" onclick="runScriptQuery(true)">
+        Ejecutar Selección <small style="opacity: 0.7; font-size: 10px;"> (Ctrl+Shift+Enter)</small></button>
       <button class="btn" onclick="openConverterModal()">🔄 Conversor de Datos</button>
-      <button class="btn" onclick="openModal('Nueva Conexión', 'Configura tu servidor MySQL, PostgreSQL o SQLite.')">+ Nueva DB</button>
+      <button class="btn" onclick="openConnectionModal()">+ Conectar Servidor</button>
     </div>
 
     <!-- Espacio de Trabajo Principal -->
     <div class="workspace">
-      
+
       <!-- Explorador Lateral de Bases de Datos -->
       <aside class="sidebar">
-        <div class="sidebar-header">
-          <input type="text" class="search-input" placeholder="Buscar tablas, esquemas...">
+        <div class="sidebar-header" style="gap: 6px;">
+          <input type="text" id="schemaSearchInput" class="search-input" placeholder="Buscar esquemas..."
+            oninput="filterSchemas(this.value)">
+          <button class="btn" style="padding: 4px 8px; font-size: 11px;" title="Refrescar esquemas"
+            onclick="loadDatabasesTree()">🔄</button>
         </div>
         <div class="tree-view" id="treeView">
           <!-- Carga dinámicamente desde app.js -->
@@ -45,7 +55,7 @@
 
       <!-- Escenario Central (Editor y Resultados) -->
       <main class="main-stage">
-        
+
         <!-- Pestañas de Trabajo -->
         <div class="tab-bar">
           <div class="tab active" id="tab-btn-editor" onclick="switchTab('tab-editor')">Editor SQL</div>
@@ -56,23 +66,34 @@
         <div class="tab-content active" id="tab-editor">
           <div class="editor-pane">
             <div class="line-numbers" id="lineNumbers">1</div>
-            <textarea id="sqlEditor" class="code-editor" spellcheck="false" placeholder="-- Escribe tus consultas SQL aquí&#10;SELECT * FROM usuarios;"></textarea>
+            <div class="code-editor-wrapper">
+              <pre id="highlighting" class="highlighting-pane"
+                aria-hidden="true"><code id="highlightingContent"></code></pre>
+              <textarea id="sqlEditor" class="code-editor" spellcheck="false"
+                placeholder="-- Escribe tus consultas SQL aquí&#10;SELECT * FROM usuarios;"></textarea>
+              <div id="autocompleteBox" class="autocomplete-dropdown" style="display: none;"></div>
+            </div>
           </div>
 
           <!-- Panel de Resultados / Consola -->
           <div class="results-pane">
             <div class="results-navbar">
-              <div class="results-tab active" id="btn-show-grid" onclick="toggleResultView('grid')">Resultados Grid</div>
+              <div class="results-tab active" id="btn-show-grid" onclick="toggleResultView('grid')">Resultados Grid
+              </div>
               <div class="results-tab" id="btn-show-log" onclick="toggleResultView('log')">Consola de Salida</div>
             </div>
 
             <div class="data-grid-container" id="view-grid">
               <table class="data-table">
                 <thead id="gridHead">
-                  <tr><th>Mensaje</th></tr>
+                  <tr>
+                    <th>Mensaje</th>
+                  </tr>
                 </thead>
                 <tbody id="gridBody">
-                  <tr><td>Ejecuta una consulta SQL para mostrar resultados.</td></tr>
+                  <tr>
+                    <td>Ejecuta una consulta SQL para mostrar resultados.</td>
+                  </tr>
                 </tbody>
               </table>
             </div>
@@ -85,6 +106,18 @@
 
         <!-- Contenido 2: Diagrama ER -->
         <div class="tab-content" id="tab-er">
+          <div class="er-toolbar"
+            style="display: flex; align-items: center; gap: 10px; padding: 8px 16px; background: var(--bg-card); border-bottom: 1px solid var(--border-color);">
+            <span style="font-size: 12px; font-weight: 600;">Esquema:</span>
+            <select id="erDatabaseSelect" class="form-control"
+              style="padding: 4px 8px; font-size: 12px; min-width: 180px; background: var(--bg-input); color: var(--text-main); border: 1px solid var(--border-color); border-radius: 4px;"
+              onchange="loadERDiagramForSelectedDb(this.value)">
+              <option value="">Selecciona una base de datos...</option>
+            </select>
+            <button class="btn" style="padding: 4px 10px; font-size: 11px;" onclick="renderERDiagram()">🔄 Actualizar
+              Diagrama</button>
+            <span id="erInfoBadge" style="font-size: 11px; color: var(--text-muted); margin-left: auto;"></span>
+          </div>
           <div class="diagram-canvas" id="diagramCanvas"></div>
         </div>
 
@@ -105,8 +138,9 @@
       <div class="modal-header">Conversor de Formatos de Datos</div>
       <div class="modal-body">
         <label style="font-weight: bold; display: block; margin-bottom: 6px;">Entrada:</label>
-        <textarea id="converterInput" class="form-control" style="width: 100%; height: 100px; font-family: monospace;" placeholder='Pega aquí tu JSON, CSV o texto...'></textarea>
-        
+        <textarea id="converterInput" class="form-control" style="width: 100%; height: 100px; font-family: monospace;"
+          placeholder='Pega aquí tu JSON, CSV o texto...'></textarea>
+
         <div style="display: flex; gap: 8px; margin: 12px 0;">
           <button class="btn" onclick="convertData('json-to-sql')">JSON a SQL</button>
           <button class="btn" onclick="convertData('excel-to-sql')">CSV a SQL</button>
@@ -114,11 +148,49 @@
         </div>
 
         <label style="font-weight: bold; display: block; margin-bottom: 6px;">Resultado:</label>
-        <textarea id="converterOutput" class="form-control" style="width: 100%; height: 120px; font-family: monospace;" readonly></textarea>
+        <textarea id="converterOutput" class="form-control" style="width: 100%; height: 120px; font-family: monospace;"
+          readonly></textarea>
       </div>
       <div class="modal-footer">
         <button class="btn btn-primary" onclick="copyConverterOutput()">Copiar Resultado</button>
         <button class="btn" onclick="closeConverterModal()">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       MODAL: NUEVA CONEXIÓN
+       ========================================== -->
+  <div class="modal-overlay" id="connectionModal">
+    <div class="modal" style="width: 450px;">
+      <div class="modal-header">Configurar Conexión MySQL</div>
+      <div class="modal-body">
+        <div style="margin-bottom: 12px;">
+          <label style="font-weight: bold; display: block; margin-bottom: 4px;">Host / Servidor:</label>
+          <input type="text" id="connHost" class="form-control" style="width: 100%;" value="127.0.0.1"
+            placeholder="ej. localhost">
+        </div>
+        <div style="margin-bottom: 12px;">
+          <label style="font-weight: bold; display: block; margin-bottom: 4px;">Puerto:</label>
+          <input type="number" id="connPort" class="form-control" style="width: 100%;" value="3306">
+        </div>
+        <div style="margin-bottom: 12px;">
+          <label style="font-weight: bold; display: block; margin-bottom: 4px;">Usuario:</label>
+          <input type="text" id="connUser" class="form-control" style="width: 100%;" value="root"
+            placeholder="ej. root">
+        </div>
+        <div style="margin-bottom: 12px;">
+          <label style="font-weight: bold; display: block; margin-bottom: 4px;">Contraseña:</label>
+          <input type="password" id="connPassword" class="form-control" style="width: 100%;">
+        </div>
+        <div style="margin-bottom: 12px;">
+          <label style="font-weight: bold; display: block; margin-bottom: 4px;">Base de Datos (Opcional):</label>
+          <input type="text" id="connDatabase" class="form-control" style="width: 100%;">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" onclick="saveConnection()">Conectar y Guardar</button>
+        <button class="btn" onclick="closeConnectionModal()">Cancelar</button>
       </div>
     </div>
   </div>
@@ -139,4 +211,5 @@
   <script src="js/auth.js"></script>
   <script src="js/app.js"></script>
 </body>
+
 </html>

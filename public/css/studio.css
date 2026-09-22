@@ -87,8 +87,79 @@
 
 .tree-view {
   flex: 1;
-  padding: 10px 12px;
+  padding: 8px 6px;
   overflow-y: auto;
+}
+
+.db-tree-item {
+  margin-bottom: 2px;
+}
+
+.db-node-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-main);
+  user-select: none;
+  transition: background 0.15s ease;
+}
+
+.db-node-header:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.db-node-header.active {
+  background: rgba(59, 130, 246, 0.15);
+  color: var(--primary-color, #38bdf8);
+}
+
+.db-node-icon {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.db-node-arrow {
+  font-size: 9px;
+  transition: transform 0.2s ease;
+  display: inline-block;
+  color: var(--text-muted);
+}
+
+.db-node-arrow.open {
+  transform: rotate(90deg);
+}
+
+.db-tables-list {
+  display: none;
+  padding-left: 18px;
+  margin-top: 2px;
+  margin-bottom: 4px;
+}
+
+.db-tables-list.show {
+  display: block;
+}
+
+.table-node-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  transition: all 0.15s ease;
+}
+
+.table-node-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-main);
 }
 
 .main-stage {
@@ -157,17 +228,119 @@
   background: var(--bg-dark);
 }
 
-.code-editor {
+.code-editor-wrapper {
   flex: 1;
-  background: transparent;
-  border: none;
-  color: var(--text-main);
+  position: relative;
+  overflow: hidden;
+}
+
+.highlighting-pane,
+.code-editor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
   padding: 10px 14px;
+  border: none;
   font-family: 'Consolas', 'Courier New', monospace;
   font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  box-sizing: border-box;
+}
+
+.highlighting-pane {
+  background: transparent;
+  color: var(--text-main);
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 1;
+}
+
+.highlighting-pane code {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  white-space: inherit;
+  display: block;
+}
+
+.code-editor {
+  background: transparent;
+  color: transparent;
+  caret-color: #38bdf8;
   resize: none;
   outline: none;
-  line-height: 1.5;
+  overflow-y: auto;
+  z-index: 2;
+}
+
+/* Colores de sintaxis SQL */
+.sql-keyword {
+  color: #38bdf8; /* Azul brillante estilo Workbench / IDE */
+  font-weight: 600;
+}
+
+.sql-string {
+  color: #a3e635; /* Verde para cadenas de texto */
+}
+
+.sql-number {
+  color: #fb923c; /* Naranja para números */
+}
+
+.sql-comment {
+  color: #64748b; /* Gris apagado para comentarios */
+  font-style: italic;
+}
+
+.sql-function {
+  color: #c084fc; /* Morado claro para funciones COUNT, SUM, MAX... */
+  font-weight: 500;
+}
+
+/* ==========================================
+   DROPDOWN DE AUTOCOMPLETADO
+   ========================================== */
+.autocomplete-dropdown {
+  position: absolute;
+  background: #1e293b;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 100;
+  width: 260px;
+  font-family: 'Consolas', monospace;
+  font-size: 12px;
+}
+
+.autocomplete-item {
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  color: var(--text-main);
+  transition: background 0.1s;
+}
+
+.autocomplete-item:hover,
+.autocomplete-item.selected {
+  background: rgba(56, 189, 248, 0.18);
+  color: #38bdf8;
+}
+
+.autocomplete-tag {
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-muted);
 }
 
 /* ==========================================
@@ -251,9 +424,132 @@
 .diagram-canvas {
   flex: 1;
   background: var(--bg-main);
+  overflow: auto;
+  padding: 24px;
+  position: relative;
+}
+
+.er-empty-state {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  height: 100%;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.er-grid-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  align-items: flex-start;
+}
+
+.er-table-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  min-width: 230px;
+  max-width: 300px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.er-table-card:hover {
+  border-color: var(--accent-color);
+  transform: translateY(-2px);
+}
+
+.er-table-header {
+  background: #1e293b;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: bold;
+  color: #f8fafc;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.er-columns-list {
+  padding: 6px 0;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.er-column-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 12px;
+  font-size: 11.5px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  gap: 8px;
+}
+
+.er-column-row:last-child {
+  border-bottom: none;
+}
+
+.er-col-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.er-col-badge {
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-weight: bold;
+}
+
+.badge-pk {
+  background: #eab308;
+  color: #000000;
+}
+
+.badge-fk {
+  background: #3b82f6;
+  color: #ffffff;
+}
+
+.er-col-name {
+  color: var(--text-main);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+.er-col-type {
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-family: 'Consolas', monospace;
+  white-space: nowrap;
+}
+
+.er-relations-panel {
+  margin-top: 24px;
+  padding: 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+}
+
+.er-relation-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-input);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  margin: 4px;
+  border: 1px solid var(--border-color);
 }
 
 .status-bar {

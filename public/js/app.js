@@ -29,51 +29,281 @@ document.addEventListener('DOMContentLoaded', () => {
  * Maneja el auto-incremental de líneas, sincronización de desplazamiento (scroll)
  * e intercepta la tecla 'Tab' para insertar espacios en blanco sin perder el foco.
  */
+// ==========================================
+// LISTA DE PALABRAS CLAVE Y FUNCIONES SQL
+// ==========================================
+const SQL_KEYWORDS = [
+  'SELECT', 'FROM', 'WHERE', 'INSERT', 'INTO', 'VALUES', 'UPDATE', 'SET',
+  'DELETE', 'CREATE', 'DATABASE', 'TABLE', 'DROP', 'ALTER', 'ADD', 'COLUMN',
+  'PRIMARY', 'KEY', 'FOREIGN', 'REFERENCES', 'JOIN', 'LEFT', 'RIGHT', 'INNER',
+  'OUTER', 'ON', 'GROUP', 'BY', 'ORDER', 'ASC', 'DESC', 'HAVING', 'LIMIT',
+  'OFFSET', 'AS', 'AND', 'OR', 'NOT', 'NULL', 'IS', 'IN', 'LIKE', 'BETWEEN',
+  'EXISTS', 'UNION', 'ALL', 'DISTINCT', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END',
+  'USE', 'SHOW', 'DATABASES', 'TABLES', 'DESCRIBE', 'EXPLAIN', 'TRUNCATE',
+  'INT', 'VARCHAR', 'TEXT', 'DATETIME', 'DATE', 'BOOLEAN', 'DECIMAL', 'FLOAT'
+];
+
+const SQL_FUNCTIONS = [
+  'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'CONCAT', 'NOW', 'CURDATE', 'COALESCE',
+  'IFNULL', 'ROUND', 'UPPER', 'LOWER', 'SUBSTRING', 'LENGTH', 'DATE_FORMAT'
+];
+
+let autocompleteSelectedIndex = 0;
+let autocompleteMatches = [];
+
+/**
+ * Inicializa el editor interactivo de consultas SQL:
+ * - Resaltado de sintaxis SQL en tiempo real (palabras nativas en azul).
+ * - Sugerencias y autocompletado con Tab / Enter.
+ * - Sincronización de scroll y números de línea.
+ */
 function initEditor() {
   const editor = document.getElementById('sqlEditor');
   const lineNumbers = document.getElementById('lineNumbers');
+  const highlightingContent = document.getElementById('highlightingContent');
+  const highlightingPane = document.getElementById('highlighting');
+  const autocompleteBox = document.getElementById('autocompleteBox');
 
-  // Si los elementos HTML del editor no existen en la página actual, finaliza la ejecución
   if (!editor || !lineNumbers) return;
 
   /**
+   * Resalta el código SQL aplicando etiquetas span con clases CSS.
+   */
+  const updateHighlighting = () => {
+    let text = editor.value;
+    // Escapar caracteres HTML para prevenir inyecciones visuales
+    let escaped = text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+
+    // 1. Resaltar comentarios (-- comentario)
+    escaped = escaped.replace(/(--.*?)(?=\n|$)/g, '<span class="sql-comment">$1</span>');
+
+    // 2. Resaltar cadenas de texto ('texto' o "texto")
+    escaped = escaped.replace(/('(?:''|[^'\\]|\\.)*'|"(?:""|[^"\\]|\\.)*")/g, '<span class="sql-string">$1</span>');
+
+    // 3. Resaltar números
+    escaped = escaped.replace(/\b(\d+(?:\.\d+)?)\b/g, '<span class="sql-number">$1</span>');
+
+    // 4. Resaltar funciones SQL
+    SQL_FUNCTIONS.forEach(fn => {
+      const reg = new RegExp(`\\b(${fn})\\b(?=\\s*\\()`, 'gi');
+      escaped = escaped.replace(reg, '<span class="sql-function">$1</span>');
+    });
+
+    // 5. Resaltar palabras clave nativas en azul brillante
+    SQL_KEYWORDS.forEach(kw => {
+      const reg = new RegExp(`\\b(${kw})\\b`, 'gi');
+      escaped = escaped.replace(reg, '<span class="sql-keyword">$1</span>');
+    });
+
+    if (highlightingContent) {
+      highlightingContent.innerHTML = escaped + (text.endsWith('\n') ? '<br>' : '');
+    }
+  };
+
+  /**
    * Calcula el número total de líneas según los saltos de página (\n)
-   * y reescribe la barra lateral de numeración en formato HTML.
    */
   const updateLineNumbers = () => {
-    const lines = editor.value.split('\n').length; // Cuenta cuántas líneas existen
+    const lines = editor.value.split('\n').length;
     let linesHTML = '';
     for (let i = 1; i <= lines; i++) {
-      linesHTML += i + '<br>'; // Construye la lista vertical de números
+      linesHTML += i + '<br>';
     }
     lineNumbers.innerHTML = linesHTML;
   };
 
-  // Evento: Actualiza el conteo de líneas cada vez que el usuario escribe o borra texto
-  editor.addEventListener('input', updateLineNumbers);
-
-  // Evento: Sincroniza el desplazamiento vertical del número de línea con el área de texto del editor
-  editor.addEventListener('scroll', () => {
-    lineNumbers.scrollTop = editor.scrollTop;
+  // Evento Input: actualiza números, coloreado y autocompletado
+  editor.addEventListener('input', () => {
+    updateLineNumbers();
+    updateHighlighting();
+    handleAutocomplete();
   });
 
-  // Evento: Permite indentar con espacios al presionar la tecla Tab (sin saltar a otros botones de la web)
-  editor.addEventListener('keydown', (e) => {
-    if (e.key === 'Tab') {
-      e.preventDefault(); // Cancela la acción predeterminada de navegación del navegador
-      const start = editor.selectionStart; // Posición inicial del cursor
-      const end = editor.selectionEnd;     // Posición final del texto seleccionado
-
-      // Inserta dos espacios en blanco exactamente en la posición donde se encuentra el cursor
-      editor.value = editor.value.substring(0, start) + '  ' + editor.value.substring(end);
-      
-      // Reposiciona el cursor inmediatamente después de los dos espacios agregados
-      editor.selectionStart = editor.selectionEnd = start + 2;
+  // Evento Scroll: sincroniza el desplazamiento del highlighting y line numbers
+  editor.addEventListener('scroll', () => {
+    lineNumbers.scrollTop = editor.scrollTop;
+    if (highlightingPane) {
+      highlightingPane.scrollTop = editor.scrollTop;
+      highlightingPane.scrollLeft = editor.scrollLeft;
     }
   });
 
-  // Ejecución inicial para dibujar el número 1 al cargar la pantalla
+  // Evento Keydown: navegación del autocompletado y tabulación
+  editor.addEventListener('keydown', (e) => {
+    if (autocompleteBox && autocompleteBox.style.display === 'block' && autocompleteMatches.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        autocompleteSelectedIndex = (autocompleteSelectedIndex + 1) % autocompleteMatches.length;
+        renderAutocompleteItems();
+        return;
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        autocompleteSelectedIndex = (autocompleteSelectedIndex - 1 + autocompleteMatches.length) % autocompleteMatches.length;
+        renderAutocompleteItems();
+        return;
+      } else if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        applyAutocompleteSuggestion(autocompleteMatches[autocompleteSelectedIndex].text);
+        return;
+      } else if (e.key === 'Escape') {
+        hideAutocomplete();
+        return;
+      }
+    }
+
+    // Atajos de ejecución de teclado (Ctrl+Enter, Ctrl+Shift+Enter, F5)
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      if (e.shiftKey) {
+        // Ctrl + Shift + Enter: Ejecutar solo selección
+        runScriptQuery(true);
+      } else {
+        // Ctrl + Enter: Ejecutar todo el script
+        runScriptQuery(false);
+      }
+      return;
+    }
+
+    if (e.key === 'F5') {
+      e.preventDefault();
+      // F5: Ejecutar todo el script (estilo Workbench/SQL Server)
+      runScriptQuery(false);
+      return;
+    }
+
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const start = editor.selectionStart;
+      const end = editor.selectionEnd;
+      editor.value = editor.value.substring(0, start) + '  ' + editor.value.substring(end);
+      editor.selectionStart = editor.selectionEnd = start + 2;
+      updateLineNumbers();
+      updateHighlighting();
+    }
+  });
+
+  // Cerrar autocompletado si se hace clic fuera
+  document.addEventListener('click', (e) => {
+    if (autocompleteBox && !autocompleteBox.contains(e.target) && e.target !== editor) {
+      hideAutocomplete();
+    }
+  });
+
+  // Ejecución inicial
   updateLineNumbers();
+  updateHighlighting();
+}
+
+/**
+ * Detecta la palabra actual que se está escribiendo para sugerir autocompletado
+ */
+function handleAutocomplete() {
+  const editor = document.getElementById('sqlEditor');
+  const autocompleteBox = document.getElementById('autocompleteBox');
+  if (!editor || !autocompleteBox) return;
+
+  const cursorPos = editor.selectionStart;
+  const textBeforeCursor = editor.value.substring(0, cursorPos);
+  const match = textBeforeCursor.match(/([a-zA-Z0-9_]+)$/);
+
+  if (!match || match[1].length < 2) {
+    hideAutocomplete();
+    return;
+  }
+
+  const query = match[1].toUpperCase();
+
+  // Buscar sugerencias entre palabras clave y funciones
+  const kwMatches = SQL_KEYWORDS
+    .filter(k => k.startsWith(query))
+    .map(k => ({ text: k, type: 'KEYWORD' }));
+
+  const fnMatches = SQL_FUNCTIONS
+    .filter(f => f.startsWith(query))
+    .map(f => ({ text: f, type: 'FUNCTION' }));
+
+  autocompleteMatches = [...kwMatches, ...fnMatches].slice(0, 7);
+
+  if (autocompleteMatches.length === 0) {
+    hideAutocomplete();
+    return;
+  }
+
+  autocompleteSelectedIndex = 0;
+  renderAutocompleteItems();
+  showAutocomplete();
+}
+
+/**
+ * Dibuja la lista de sugerencias en el elemento dropdown flotante
+ */
+function renderAutocompleteItems() {
+  const autocompleteBox = document.getElementById('autocompleteBox');
+  if (!autocompleteBox) return;
+
+  let html = '';
+  autocompleteMatches.forEach((item, idx) => {
+    const isSelected = idx === autocompleteSelectedIndex ? 'selected' : '';
+    html += `
+      <div class="autocomplete-item ${isSelected}" onclick="applyAutocompleteSuggestion('${item.text}')">
+        <span><strong>${item.text}</strong></span>
+        <span class="autocomplete-tag">${item.type}</span>
+      </div>
+    `;
+  });
+
+  autocompleteBox.innerHTML = html;
+}
+
+/**
+ * Posiciona y muestra el dropdown de sugerencias
+ */
+function showAutocomplete() {
+  const autocompleteBox = document.getElementById('autocompleteBox');
+  if (!autocompleteBox) return;
+
+  autocompleteBox.style.display = 'block';
+  autocompleteBox.style.top = '40px';
+  autocompleteBox.style.left = '60px';
+}
+
+/**
+ * Oculta el dropdown de autocompletado
+ */
+function hideAutocomplete() {
+  const autocompleteBox = document.getElementById('autocompleteBox');
+  if (autocompleteBox) {
+    autocompleteBox.style.display = 'none';
+  }
+}
+
+/**
+ * Inserta la sugerencia elegida en el editor de texto
+ */
+function applyAutocompleteSuggestion(suggestedWord) {
+  const editor = document.getElementById('sqlEditor');
+  if (!editor) return;
+
+  const cursorPos = editor.selectionStart;
+  const textBefore = editor.value.substring(0, cursorPos);
+  const textAfter = editor.value.substring(cursorPos);
+  const match = textBefore.match(/([a-zA-Z0-9_]+)$/);
+
+  if (match) {
+    const wordStart = cursorPos - match[1].length;
+    editor.value = editor.value.substring(0, wordStart) + suggestedWord + ' ' + textAfter;
+    editor.selectionStart = editor.selectionEnd = wordStart + suggestedWord.length + 1;
+  }
+
+  hideAutocomplete();
+  editor.focus();
+
+  // Re-actualizar sintaxis y líneas
+  const event = new Event('input');
+  editor.dispatchEvent(event);
 }
 
 // ==========================================
@@ -83,54 +313,94 @@ function initEditor() {
  * Lee el texto del editor, lo envía al servidor backend vía HTTP POST
  * y gestiona el tiempo de respuesta y despliegue de resultados/errores.
  */
-async function runCurrentQuery() {
+/**
+ * Ejecuta el script SQL en el editor.
+ * @param {boolean} onlySelection - Si es true, ejecuta solo el texto resaltado por el usuario con el mouse.
+ *                                   Si no hay selección, avisa al usuario o ejecuta la línea actual.
+ */
+async function runScriptQuery(onlySelection = false) {
   const token = localStorage.getItem('token');
-
   const editor = document.getElementById('sqlEditor');
-  const sql = editor.value.trim();
+  if (!editor) return;
+
+  let sql = '';
+  let executionLabel = '';
+
+  if (onlySelection) {
+    const start = editor.selectionStart;
+    const end = editor.selectionEnd;
+    const selectedText = editor.value.substring(start, end).trim();
+
+    if (!selectedText) {
+      logConsole('No has seleccionado ningún fragmento de texto con el mouse.', 'error');
+      toggleResultView('log');
+      return;
+    }
+
+    sql = selectedText;
+    executionLabel = 'Ejecutando fragmento seleccionado';
+  } else {
+    sql = editor.value.trim();
+    executionLabel = 'Ejecutando script completo';
+  }
 
   // Validación previa: evita enviar peticiones vacías al servidor
   if (!sql) {
     logConsole('No hay consulta escrita para ejecutar.', 'error');
+    toggleResultView('log');
     return;
   }
 
-  logConsole(`Ejecutando consulta:\n${sql}`, 'info');
+  logConsole(`${executionLabel}:\n${sql}`, 'info');
 
   try {
-    const startTime = performance.now(); // Cronómetro para medir latencia de la consulta
-    
+    const startTime = performance.now();
+
+    // Obtener la configuración de conexión activa si existe
+    const activeConnection = localStorage.getItem('activeDbConnection');
+    const connectionConfig = activeConnection ? JSON.parse(activeConnection) : null;
+
     // Petición asíncrona enviada a la API REST del backend
     const res = await fetch('/api/query', {
       method: 'POST',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}` // <--- Añadir este encabezado
+        'Authorization': `Bearer ${token}`
       },
-      body: JSON.stringify({ sql })
+      body: JSON.stringify({ sql, connectionConfig })
     });
 
     const data = await res.json();
-    const duration = Math.round(performance.now() - startTime); // Tiempo de respuesta en milisegundos
+    const duration = Math.round(performance.now() - startTime);
 
     // Si el servidor respondió con un error (Status Code distinto a 2xx)
     if (!res.ok) {
       logConsole(`Error en la ejecución: ${data.error}`, 'error');
-      toggleResultView('log'); // Muestra la pestaña de la consola de error automáticamente
+      toggleResultView('log');
       return;
     }
 
     // Renderiza la matriz de datos recibida en la tabla interactiva
     renderDataGrid(data.columns || [], data.rows || []);
     logConsole(`Consulta ejecutada correctamente. Filas: ${data.rows ? data.rows.length : 0} | Tiempo: ${duration}ms`, 'success');
-    
+
     // Muestra métricas de rendimiento en la barra de estado (footer)
     document.getElementById('footerMetrics').innerText = `Filas: ${data.rows ? data.rows.length : 0} | Tiempo: ${duration}ms`;
+
+    // Si la consulta fue un CREATE, DROP, ALTER o USE, refrescar el árbol de esquemas automáticamente
+    const upperSql = sql.toUpperCase();
+    if (upperSql.includes('CREATE DATABASE') || upperSql.includes('DROP DATABASE') || upperSql.includes('CREATE TABLE') || upperSql.includes('DROP TABLE')) {
+      loadDatabasesTree();
+    }
   } catch (err) {
-    // Captura fallos críticos de red o desconexión del servidor
     logConsole('Error al comunicar con el servidor.', 'error');
     toggleResultView('log');
   }
+}
+
+// Mantener compatibilidad con cualquier llamada residual a runCurrentQuery
+function runCurrentQuery() {
+  runScriptQuery(false);
 }
 
 /**
@@ -245,21 +515,225 @@ function toggleResultView(view) {
 // ==========================================
 // 5. BARRA LATERAL (ÁRBOL DE ESQUEMAS)
 // ==========================================
+let currentDatabasesList = [];
+
 /**
  * Actualiza la información visible en el explorador de bases de datos (Barra Lateral).
- * Actualmente muestra un estado por defecto solicitando conectar un servidor.
  */
 function refreshSidebar() {
+  loadDatabasesTree();
+}
+
+/**
+ * Consulta al backend las bases de datos disponibles con las credenciales activas.
+ */
+async function loadDatabasesTree() {
   const treeView = document.getElementById('treeView');
   if (!treeView) return;
 
-  // Estado limpio: Sin bases de datos simuladas
+  const activeConnection = localStorage.getItem('activeDbConnection');
+  if (!activeConnection) {
+    treeView.innerHTML = `
+      <div style="padding: 16px 10px; font-size: 11px; color: var(--text-muted); text-align: center; line-height: 1.5;">
+        Sin conexiones activas.<br><br>
+        Haz clic en <strong>+ Conectar Servidor</strong> para configurar tu base de datos.
+      </div>
+    `;
+    return;
+  }
+
+  const config = JSON.parse(activeConnection);
+
+  // Actualizar estado del footer
+  const footerStatus = document.querySelector('.status-bar span:first-child');
+  if (footerStatus) {
+    footerStatus.innerText = `Servidor: ${config.host}:${config.port}${config.database ? ` | DB: ${config.database}` : ''}`;
+  }
+
   treeView.innerHTML = `
-    <div style="padding: 16px 10px; font-size: 11px; color: var(--text-muted); text-align: center; line-height: 1.5;">
-      Sin conexiones activas.<br><br>
-      Haz clic en <strong>+ Nueva DB</strong> para conectar tu servidor de base de datos.
+    <div style="padding: 12px 10px; font-size: 11px; color: var(--text-muted); text-align: center;">
+      <span>⏳ Cargando esquemas...</span>
     </div>
   `;
+
+  try {
+    const res = await fetch('/api/databases', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ connectionConfig: config })
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      treeView.innerHTML = `
+        <div style="padding: 12px 10px; font-size: 11px; color: #ef4444; line-height: 1.4;">
+          Error al obtener esquemas:<br>
+          <span style="font-size: 10px;">${data.error || 'Fallo de conexión'}</span>
+        </div>
+      `;
+      return;
+    }
+
+    currentDatabasesList = data.databases || [];
+    renderDatabasesTree(currentDatabasesList);
+  } catch (err) {
+    treeView.innerHTML = `
+      <div style="padding: 12px 10px; font-size: 11px; color: #ef4444;">
+        No se pudo conectar con el servidor.
+      </div>
+    `;
+  }
+}
+
+/**
+ * Renderiza la lista de esquemas en el árbol lateral.
+ */
+function renderDatabasesTree(databases) {
+  const treeView = document.getElementById('treeView');
+  if (!treeView) return;
+
+  if (databases.length === 0) {
+    treeView.innerHTML = `
+      <div style="padding: 14px 10px; font-size: 11px; color: var(--text-muted); text-align: center;">
+        No se encontraron bases de datos.
+      </div>
+    `;
+    return;
+  }
+
+  const activeConnection = localStorage.getItem('activeDbConnection');
+  const currentDb = activeConnection ? JSON.parse(activeConnection).database : null;
+
+  let html = `<div style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); padding: 4px 6px 8px 6px; font-weight: bold;">
+    ESQUEMAS (${databases.length})
+  </div>`;
+
+  databases.forEach(db => {
+    const isSelected = currentDb && currentDb.toLowerCase() === db.toLowerCase();
+    html += `
+      <div class="db-tree-item" id="db-item-${db}">
+        <div class="db-node-header ${isSelected ? 'active' : ''}" onclick="toggleDatabaseNode('${db}')">
+          <span class="db-node-arrow" id="arrow-${db}">▶</span>
+          <span class="db-node-icon">🗄️</span>
+          <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${db}">${db}</span>
+        </div>
+        <div class="db-tables-list" id="tables-list-${db}"></div>
+      </div>
+    `;
+  });
+
+  treeView.innerHTML = html;
+}
+
+/**
+ * Expande o contrae una base de datos para mostrar sus tablas (como Workbench).
+ */
+async function toggleDatabaseNode(dbName) {
+  const tablesContainer = document.getElementById(`tables-list-${dbName}`);
+  const arrow = document.getElementById(`arrow-${dbName}`);
+  if (!tablesContainer) return;
+
+  const isExpanded = tablesContainer.classList.contains('show');
+
+  if (isExpanded) {
+    tablesContainer.classList.remove('show');
+    if (arrow) arrow.classList.remove('open');
+    return;
+  }
+
+  // Marcar como activa esta base de datos en la conexión actual
+  setWorkingDatabase(dbName);
+
+  tablesContainer.classList.add('show');
+  if (arrow) arrow.classList.add('open');
+
+  // Si ya tiene cargadas las tablas, no volvemos a consultar
+  if (tablesContainer.getAttribute('data-loaded') === 'true') {
+    return;
+  }
+
+  tablesContainer.innerHTML = `<div style="padding: 4px 8px; font-size: 11px; color: var(--text-muted);">⏳ Cargando tablas...</div>`;
+
+  const activeConnection = localStorage.getItem('activeDbConnection');
+  if (!activeConnection) return;
+  const config = JSON.parse(activeConnection);
+
+  try {
+    const res = await fetch('/api/tables', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ connectionConfig: config, database: dbName })
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      tablesContainer.innerHTML = `<div style="padding: 4px 8px; font-size: 10px; color: #ef4444;">Error al cargar tablas</div>`;
+      return;
+    }
+
+    const tables = data.tables || [];
+    tablesContainer.setAttribute('data-loaded', 'true');
+
+    if (tables.length === 0) {
+      tablesContainer.innerHTML = `<div style="padding: 4px 8px; font-size: 11px; color: var(--text-muted); font-style: italic;">(Sin tablas)</div>`;
+      return;
+    }
+
+    let tablesHtml = '';
+    tables.forEach(table => {
+      tablesHtml += `
+        <div class="table-node-item" onclick="pasteSelectTable('${dbName}', '${table}')" title="Doble clic o clic para consultar">
+          <span style="font-size: 11px;">📋</span>
+          <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${table}</span>
+        </div>
+      `;
+    });
+
+    tablesContainer.innerHTML = tablesHtml;
+  } catch (err) {
+    tablesContainer.innerHTML = `<div style="padding: 4px 8px; font-size: 10px; color: #ef4444;">Error de red</div>`;
+  }
+}
+
+/**
+ * Asigna la base de datos seleccionada como la activa para futuras consultas.
+ */
+function setWorkingDatabase(dbName) {
+  const activeConnection = localStorage.getItem('activeDbConnection');
+  if (!activeConnection) return;
+
+  const config = JSON.parse(activeConnection);
+  config.database = dbName;
+  localStorage.setItem('activeDbConnection', JSON.stringify(config));
+
+  // Actualizar estilo visual activo en el sidebar
+  document.querySelectorAll('.db-node-header').forEach(el => el.classList.remove('active'));
+  const activeNode = document.querySelector(`#db-item-${dbName} .db-node-header`);
+  if (activeNode) activeNode.classList.add('active');
+
+  // Actualizar barra de estado
+  const footerStatus = document.querySelector('.status-bar span:first-child');
+  if (footerStatus) {
+    footerStatus.innerText = `Servidor: ${config.host}:${config.port} | DB: ${dbName}`;
+  }
+
+  logConsole(`Base de datos activa cambiada a: ${dbName}`, 'info');
+}
+
+/**
+ * Filtra los esquemas en tiempo real con el input de búsqueda.
+ */
+function filterSchemas(text) {
+  const query = text.toLowerCase().trim();
+  if (!query) {
+    renderDatabasesTree(currentDatabasesList);
+    return;
+  }
+
+  const filtered = currentDatabasesList.filter(db => db.toLowerCase().includes(query));
+  renderDatabasesTree(filtered);
 }
 
 /**
@@ -268,8 +742,9 @@ function refreshSidebar() {
  */
 function pasteSelectTable(schema, table) {
   const editor = document.getElementById('sqlEditor');
+  if (!editor) return;
   editor.value = `SELECT * FROM ${schema}.${table} LIMIT 100;`;
-  initEditor(); // Re-calcula los números de línea del editor
+  editor.dispatchEvent(new Event('input'));
 }
 
 // ==========================================
@@ -312,7 +787,7 @@ function convertData(type) {
       const parsed = JSON.parse(input);
       const arr = Array.isArray(parsed) ? parsed : [parsed];
       if (arr.length === 0) return;
-      
+
       const keys = Object.keys(arr[0]);
       let sql = `INSERT INTO mi_tabla (${keys.join(', ')}) VALUES\n`;
       const values = arr.map(row => {
@@ -321,11 +796,11 @@ function convertData(type) {
       });
       sql += values.join(',\n') + ';';
       output.value = sql;
-    } 
+    }
     // 2. Transforma consultas o datos SQL a formato objeto JSON
     else if (type === 'sql-to-json') {
       output.value = JSON.stringify([{ id: 1, mensaje: 'Respuesta generada desde SQL' }], null, 2);
-    } 
+    }
     // 3. Transforma filas separadas por comas (CSV/Excel) a sentencias SQL
     else if (type === 'excel-to-sql') {
       const lines = input.split('\n');
@@ -337,7 +812,7 @@ function convertData(type) {
         return `(${vals})`;
       });
       output.value = sql + rows.join(',\n') + ';';
-    } 
+    }
     // 4. Transforma un objeto JSON en una tabla formateada para archivos Markdown (.md)
     else if (type === 'json-to-markdown') {
       const parsed = JSON.parse(input);
@@ -386,15 +861,226 @@ function closeModal() {
 }
 
 /**
+ * Muestra el modal para configurar una nueva conexión a la base de datos.
+ */
+function openConnectionModal() {
+  document.getElementById('connectionModal').style.display = 'flex';
+}
+
+/**
+ * Cierra el modal de conexión a la base de datos.
+ */
+function closeConnectionModal() {
+  document.getElementById('connectionModal').style.display = 'none';
+}
+
+/**
+ * Guarda los detalles de la conexión en localStorage y actualiza la UI.
+ */
+function saveConnection() {
+  const host = document.getElementById('connHost').value.trim();
+  const port = document.getElementById('connPort').value.trim();
+  const user = document.getElementById('connUser').value.trim();
+  const password = document.getElementById('connPassword').value;
+  const database = document.getElementById('connDatabase').value.trim();
+
+  if (!host || !port || !user) {
+    alert("Host, Puerto y Usuario son obligatorios.");
+    return;
+  }
+
+  const connectionConfig = {
+    host,
+    port: parseInt(port),
+    user,
+    password,
+    database: database || undefined
+  };
+
+  localStorage.setItem('activeDbConnection', JSON.stringify(connectionConfig));
+
+  closeConnectionModal();
+  refreshSidebar();
+  logConsole(`Conexión configurada para ${host}:${port}`, 'success');
+}
+
+/**
  * Carga e inicializa el lienzo (canvas) que dibuja el diagrama Entidad-Relación de la base de datos.
  */
-function renderERDiagram() {
+async function renderERDiagram() {
   const canvas = document.getElementById('diagramCanvas');
+  const select = document.getElementById('erDatabaseSelect');
+  const badge = document.getElementById('erInfoBadge');
   if (!canvas) return;
+
+  const activeConnection = localStorage.getItem('activeDbConnection');
+  if (!activeConnection) {
+    canvas.innerHTML = `
+      <div class="er-empty-state">
+        <div style="font-size: 32px; margin-bottom: 12px;">📊</div>
+        <h3 style="color: var(--text-main); margin-bottom: 8px;">Sin Conexión Activa</h3>
+        <p style="font-size: 12px; max-width: 320px;">Conecta tu servidor MySQL con el botón <strong>+ Conectar Servidor</strong> para generar el diagrama Entidad-Relación.</p>
+      </div>
+    `;
+    if (badge) badge.innerText = '';
+    return;
+  }
+
+  const config = JSON.parse(activeConnection);
+
+  // Poblar el selector de bases de datos si está vacío o desactualizado
+  if (select && currentDatabasesList.length > 0) {
+    const currentVal = select.value || config.database || '';
+    let optionsHtml = '<option value="">Selecciona una base de datos...</option>';
+    currentDatabasesList.forEach(db => {
+      const selected = (db.toLowerCase() === currentVal.toLowerCase()) ? 'selected' : '';
+      optionsHtml += `<option value="${db}" ${selected}>${db}</option>`;
+    });
+    select.innerHTML = optionsHtml;
+  }
+
+  const targetDb = (select && select.value) ? select.value : config.database;
+
+  if (!targetDb) {
+    canvas.innerHTML = `
+      <div class="er-empty-state">
+        <div style="font-size: 32px; margin-bottom: 12px;">🗄️</div>
+        <h3 style="color: var(--text-main); margin-bottom: 8px;">Selecciona un Esquema</h3>
+        <p style="font-size: 12px; max-width: 340px;">Elige una base de datos en el menú desplegable superior o en la barra lateral para inspeccionar sus entidades y relaciones.</p>
+      </div>
+    `;
+    if (badge) badge.innerText = '';
+    return;
+  }
+
   canvas.innerHTML = `
-    <div style="padding: 20px; color: var(--text-muted); text-align: center;">
-      <h3>📊 Generador de Diagrama Entidad-Relación</h3>
-      <p style="margin-top: 10px; font-size: 12px;">Conéctate a un servidor para visualizar el modelo de bases de datos de forma interactiva.</p>
+    <div class="er-empty-state">
+      <div style="font-size: 28px; margin-bottom: 10px;">⏳</div>
+      <p style="font-size: 12px;">Analizando tablas, columnas y relaciones foráneas de <strong>${targetDb}</strong>...</p>
     </div>
   `;
+
+  try {
+    const res = await fetch('/api/schema', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ connectionConfig: config, database: targetDb })
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      canvas.innerHTML = `
+        <div class="er-empty-state">
+          <h4 style="color: #ef4444; margin-bottom: 6px;">Error al generar diagrama</h4>
+          <p style="font-size: 11px;">${data.error || 'No se pudo cargar el esquema'}</p>
+        </div>
+      `;
+      if (badge) badge.innerText = '';
+      return;
+    }
+
+    const { tables, relations } = data;
+
+    if (!tables || tables.length === 0) {
+      canvas.innerHTML = `
+        <div class="er-empty-state">
+          <div style="font-size: 32px; margin-bottom: 12px;">📂</div>
+          <h3 style="color: var(--text-main); margin-bottom: 8px;">Base de datos vacía</h3>
+          <p style="font-size: 12px;">La base de datos <strong>${targetDb}</strong> aún no contiene tablas.</p>
+        </div>
+      `;
+      if (badge) badge.innerText = '0 tablas';
+      return;
+    }
+
+    if (badge) {
+      badge.innerText = `${tables.length} tablas | ${relations.length} relaciones`;
+    }
+
+    // Renderizar tarjetas de tablas
+    let html = `<div class="er-grid-container">`;
+
+    tables.forEach(table => {
+      html += `
+        <div class="er-table-card">
+          <div class="er-table-header">
+            <span>📋 ${table.name}</span>
+            <span style="font-size: 10px; opacity: 0.7; font-weight: normal;">${table.columns.length} cols</span>
+          </div>
+          <div class="er-columns-list">
+      `;
+
+      table.columns.forEach(col => {
+        let badgeHtml = '';
+        if (col.isPrimary) {
+          badgeHtml = `<span class="er-col-badge badge-pk" title="Clave Primaria">PK</span>`;
+        } else if (col.isForeign) {
+          badgeHtml = `<span class="er-col-badge badge-fk" title="Clave Foránea">FK</span>`;
+        }
+
+        html += `
+          <div class="er-column-row">
+            <div class="er-col-info">
+              ${badgeHtml}
+              <span class="er-col-name" title="${col.name}">${col.name}</span>
+            </div>
+            <span class="er-col-type" title="${col.type}">${col.type}</span>
+          </div>
+        `;
+      });
+
+      html += `
+          </div>
+        </div>
+      `;
+    });
+
+    html += `</div>`;
+
+    // Si existen relaciones foráneas, mostrar resumen inferior
+    if (relations && relations.length > 0) {
+      html += `
+        <div class="er-relations-panel">
+          <div style="font-size: 12px; font-weight: bold; margin-bottom: 8px; color: var(--text-main);">
+            🔗 Relaciones de Claves Foráneas Detectadas (${relations.length}):
+          </div>
+          <div>
+      `;
+
+      relations.forEach(rel => {
+        html += `
+          <div class="er-relation-tag">
+            <strong style="color: #38bdf8;">${rel.fromTable}</strong>.${rel.fromColumn}
+            <span>➔</span>
+            <strong style="color: #34d399;">${rel.toTable}</strong>.${rel.toColumn}
+          </div>
+        `;
+      });
+
+      html += `
+          </div>
+        </div>
+      `;
+    }
+
+    canvas.innerHTML = html;
+  } catch (err) {
+    canvas.innerHTML = `
+      <div class="er-empty-state">
+        <h4 style="color: #ef4444;">Error de conexión</h4>
+        <p style="font-size: 11px;">No se pudo comunicar con el servidor para consultar el esquema.</p>
+      </div>
+    `;
+    if (badge) badge.innerText = '';
+  }
+}
+
+/**
+ * Función llamada cuando el usuario cambia la base de datos en el selector de la pestaña ER.
+ */
+function loadERDiagramForSelectedDb(dbName) {
+  if (!dbName) return;
+  setWorkingDatabase(dbName);
+  renderERDiagram();
 }
