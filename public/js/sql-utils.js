@@ -244,12 +244,86 @@
     return null;
   }
 
+  /**
+   * Localiza las cláusulas principales de UNA consulta SELECT a nivel superior
+   * (ignorando lo que esté dentro de paréntesis, cadenas o comentarios).
+   * Se usa para agregar filtros WHERE / ORDER BY a una consulta existente.
+   * @returns {{clauses: Array<{kw: string, start: number, end: number}>, fromCommas: number[]}}
+   *   kw: SELECT | FROM | WHERE | GROUP BY | HAVING | ORDER BY | LIMIT | UNION | JOIN | WINDOW | INTO | FOR
+   *   start/end: posición de la palabra clave dentro del texto original
+   */
+  function topLevelClauses(sql) {
+    const text = String(sql || '');
+    const clauses = [];
+    const commas = [];
+    let depth = 0;
+    let i = 0;
+    const n = text.length;
+    const JOIN_WORDS = ['JOIN', 'STRAIGHT_JOIN'];
+    const SIMPLE = ['SELECT', 'FROM', 'WHERE', 'HAVING', 'LIMIT', 'UNION', 'WINDOW', 'INTO', 'FOR', 'EXCEPT', 'INTERSECT'];
+
+    while (i < n) {
+      const ch = text[i];
+      const next = text[i + 1];
+      if ((ch === '-' && next === '-' && (i + 2 >= n || /\s/.test(text[i + 2]))) || ch === '#') {
+        const end = text.indexOf('\n', i);
+        i = end === -1 ? n : end;
+        continue;
+      }
+      if (ch === '/' && next === '*') {
+        const end = text.indexOf('*/', i + 2);
+        i = end === -1 ? n : end + 2;
+        continue;
+      }
+      if (ch === "'" || ch === '"' || ch === '`') {
+        let j = i + 1;
+        while (j < n) {
+          if (text[j] === '\\' && ch !== '`') { j += 2; continue; }
+          if (text[j] === ch) { if (text[j + 1] === ch) { j += 2; continue; } break; }
+          j++;
+        }
+        i = j + 1;
+        continue;
+      }
+      if (ch === '(') { depth++; i++; continue; }
+      if (ch === ')') { depth--; i++; continue; }
+      if (depth === 0 && ch === ',') { commas.push(i); i++; continue; }
+      if (depth === 0 && /[A-Za-z_]/.test(ch) && (i === 0 || !/[\w$]/.test(text[i - 1]))) {
+        let j = i;
+        while (j < n && /[\w$]/.test(text[j])) j++;
+        const word = text.slice(i, j).toUpperCase();
+        if (word === 'GROUP' || word === 'ORDER') {
+          const m = /^\s+BY\b/i.exec(text.slice(j, j + 20));
+          if (m) { clauses.push({ kw: word + ' BY', start: i, end: j + m[0].length }); i = j + m[0].length; continue; }
+        } else if (SIMPLE.includes(word)) {
+          clauses.push({ kw: word, start: i, end: j });
+        } else if (JOIN_WORDS.includes(word)) {
+          clauses.push({ kw: 'JOIN', start: i, end: j });
+        }
+        i = j;
+        continue;
+      }
+      i++;
+    }
+    const from = clauses.find(c => c.kw === 'FROM');
+    const afterFrom = from ? clauses.find(c => c.start > from.start && c.kw !== 'FROM') : null;
+    const fromCommas = from ? commas.filter(c => c > from.end && (!afterFrom || c < afterFrom.start)) : [];
+    return { clauses, fromCommas };
+  }
+
+  /** ¿La sentencia es una consulta de lectura (SELECT / WITH / (SELECT ...))? */
+  function isSelectStatement(sql) {
+    return /^\(*\s*(SELECT|WITH)\b/i.test(stripForAnalysis(sql));
+  }
+
   return {
     SYSTEM_SCHEMAS,
     isSystemSchema,
     splitStatements,
     stripForAnalysis,
     analyzeRisk,
-    findBlockedStatement
+    findBlockedStatement,
+    topLevelClauses,
+    isSelectStatement
   };
 });

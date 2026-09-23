@@ -14,6 +14,7 @@ const express = require('express');
 const mysql = require('mysql2/promise');
 const DDLBuilder = require('../public/js/ddl-builder');
 const SqlUtils = require('../public/js/sql-utils');
+const GridSql = require('../public/js/grid-sql');
 
 const router = express.Router();
 
@@ -180,6 +181,137 @@ function normalizeDefault(rawDefault, extra, isMaria) {
   return value;
 }
 
+function httpError(status, message) {
+  const error = new Error(message);
+  error.status = status;
+  return error;
+}
+
+/**
+ * Lee la estructura completa de una tabla (columnas, llave primaria, UNIQUE,
+ * llaves foráneas) en el formato que usan el diseñador y el editor del grid.
+ * Lanza un error con .status si la tabla no existe o es una vista.
+ */
+async function loadTableStructure(connection, database, table) {
+  const [[versionRow]] = await connection.query('SELECT VERSION() AS v');
+  const isMaria = /mariadb/i.test(versionRow.v);
+
+  const [[tableInfo]] = await connection.query(
+    'SELECT ENGINE, TABLE_COMMENT, TABLE_TYPE FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?',
+    [database, table]
+  );
+if (!tableInfo) throw httpError(404, `La tabla ${table} no existe en ${database}.`);
+if (tableInfo.TABLE_TYPE !== 'BASE TABLE') throw httpError(400, `${table} es una vista, no una tabla.`);
+
+  const [cols] = await connection.query(
+    `SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT, EXTRA, COLUMN_COMMENT, GENERATION_EXPRESSION
+     FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION`,
+    [database, table]
+  );
+  const [indexRows] = await connection.query(
+    `SELECT INDEX_NAME, COLUMN_NAME, NON_UNIQUE, SEQ_IN_INDEX
+     FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? ORDER BY INDEX_NAME, SEQ_IN_INDEX`,
+    [database, table]
+  );
+  const [fkRows] = await connection.query(
+    `SELECT k.CONSTRAINT_NAME, k.COLUMN_NAME, k.REFERENCED_TABLE_NAME, k.REFERENCED_COLUMN_NAME, r.UPDATE_RULE, r.DELETE_RULE
+     FROM information_schema.KEY_COLUMN_USAGE k
+     JOIN information_schema.REFERENTIAL_CONSTRAINTS r
+       ON r.CONSTRAINT_SCHEMA = k.CONSTRAINT_SCHEMA AND r.CONSTRAINT_NAME = k.CONSTRAINT_NAME AND r.TABLE_NAME = k.TABLE_NAME
+     WHERE k.TABLE_SCHEMA = ? AND k.TABLE_NAME = ? AND k.REFERENCED_TABLE_NAME IS NOT NULL
+     ORDER BY k.CONSTRAINT_NAME, k.ORDINAL_POSITION`,
+    [database, table]
+  );
+
+  // Índices: llave primaria (en orden) y UNIQUE de una sola columna
+  const indexes = {};
+  indexRows.forEach(r => {
+    if (!indexes[r.INDEX_NAME]) indexes[r.INDEX_NAME] = { unique: Number(r.NON_UNIQUE) === 0, columns: [] };
+    indexes[r.INDEX_NAME].columns.push(r.COLUMN_NAME);
+  });
+  const pkColumns = indexes.PRIMARY ? indexes.PRIMARY.columns : [];
+  const singleUnique = {};
+  let compositeIndexes = 0;
+  Object.entries(indexes).forEach(([name, idx]) => {
+    if (name === 'PRIMARY') return;
+    if (idx.unique && idx.columns.length === 1 && !singleUnique[idx.columns[0]]) singleUnique[idx.columns[0]] = name;
+    else if (idx.columns.length > 1) compositeIndexes++;
+  });
+
+  // Columnas en el formato del diseñador. El orden de la PK se respeta ordenando por su posición.
+  const columns = cols.map((c, i) => {
+    const m = String(c.COLUMN_TYPE).match(/^(\w+)(?:\((.*)\))?\s*(unsigned)?/i) || [];
+    const extra = c.EXTRA || '';
+    const isGenerated = /\b(VIRTUAL|STORED|PERSISTENT)\b/i.test(extra) && c.GENERATION_EXPRESSION;
+    return {
+      id: 'c' + i,
+      origName: c.COLUMN_NAME,
+      name: c.COLUMN_NAME,
+      type: (m[1] || c.COLUMN_TYPE).toUpperCase(),
+      length: m[2] || '',
+      unsigned: !!m[3],
+      pk: pkColumns.includes(c.COLUMN_NAME),
+      nn: c.IS_NULLABLE === 'NO',
+      uq: !!singleUnique[c.COLUMN_NAME],
+      uqIndex: singleUnique[c.COLUMN_NAME] || null,
+      ai: /auto_increment/i.test(extra),
+      def: isGenerated ? '' : normalizeDefault(c.COLUMN_DEFAULT, extra, isMaria),
+      onUpdateNow: /on update current_timestamp/i.test(extra),
+      comment: c.COLUMN_COMMENT || '',
+      locked: !DDLBuilder.TYPES[(m[1] || c.COLUMN_TYPE).toUpperCase()],
+      generated: isGenerated ? { expr: c.GENERATION_EXPRESSION, kind: /STORED|PERSISTENT/i.test(extra) ? 'STORED' : 'VIRTUAL' } : null
+    };
+  });
+  // La PK compuesta debe conservar su orden original
+  const pkOrdered = pkColumns.map(name => columns.find(c => c.name === name)).filter(Boolean);
+  const pkOrderMismatch = pkOrdered.some((c, i) => columns.filter(x => x.pk)[i] !== c);
+
+  // Llaves foráneas agrupadas por nombre de constraint
+  const fkMap = {};
+  fkRows.forEach(r => {
+    if (!fkMap[r.CONSTRAINT_NAME]) {
+      fkMap[r.CONSTRAINT_NAME] = {
+        name: r.CONSTRAINT_NAME, columns: [], refTable: r.REFERENCED_TABLE_NAME, refColumns: [],
+        onDelete: r.DELETE_RULE, onUpdate: r.UPDATE_RULE
+      };
+    }
+    fkMap[r.CONSTRAINT_NAME].columns.push(r.COLUMN_NAME);
+    fkMap[r.CONSTRAINT_NAME].refColumns.push(r.REFERENCED_COLUMN_NAME);
+  });
+  const foreignKeys = Object.values(fkMap).map((fk, i) => {
+    const col = columns.find(c => c.name === fk.columns[0]);
+    return {
+      id: 'f' + i,
+      origName: fk.name,
+      name: fk.name,
+      columnId: col ? col.id : null,
+      refTable: fk.refTable,
+      refColumn: fk.refColumns[0],
+      onDelete: fk.onDelete,
+      onUpdate: fk.onUpdate,
+      multi: fk.columns.length > 1,
+      multiLabel: fk.columns.length > 1 ? `(${fk.columns.join(', ')}) → ${fk.refTable}(${fk.refColumns.join(', ')})` : null
+    };
+  });
+
+  const notes = [];
+  if (compositeIndexes) notes.push(`La tabla tiene ${compositeIndexes} índice(s) de varias columnas; se conservan sin cambios.`);
+  if (pkOrderMismatch) notes.push('La llave primaria compuesta tiene un orden distinto al de las columnas; si la modificas se reordenará.');
+
+  return {
+    table: {
+      database,
+      name: table,
+      engine: tableInfo.ENGINE,
+      comment: tableInfo.TABLE_COMMENT || '',
+      columns,
+      foreignKeys
+    },
+    notes,
+    isSystem: SqlUtils.isSystemSchema(database)
+  };
+}
+
 // Leer la estructura de una tabla en el formato que usa el diseñador
 router.post('/designer/table-structure', requireConnection, async (req, res) => {
   const { database, table } = req.body;
@@ -188,125 +320,73 @@ router.post('/designer/table-structure', requireConnection, async (req, res) => 
   let connection;
   try {
     connection = await openConnection(req.body.connectionConfig);
-    const [[versionRow]] = await connection.query('SELECT VERSION() AS v');
-    const isMaria = /mariadb/i.test(versionRow.v);
-
-    const [[tableInfo]] = await connection.query(
-      'SELECT ENGINE, TABLE_COMMENT, TABLE_TYPE FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?',
-      [database, table]
-    );
-    if (!tableInfo) return res.status(404).json({ error: `La tabla ${table} no existe en ${database}.` });
-    if (tableInfo.TABLE_TYPE !== 'BASE TABLE') return res.status(400).json({ error: `${table} es una vista, no una tabla.` });
-
-    const [cols] = await connection.query(
-      `SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT, EXTRA, COLUMN_COMMENT, GENERATION_EXPRESSION
-       FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION`,
-      [database, table]
-    );
-    const [indexRows] = await connection.query(
-      `SELECT INDEX_NAME, COLUMN_NAME, NON_UNIQUE, SEQ_IN_INDEX
-       FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? ORDER BY INDEX_NAME, SEQ_IN_INDEX`,
-      [database, table]
-    );
-    const [fkRows] = await connection.query(
-      `SELECT k.CONSTRAINT_NAME, k.COLUMN_NAME, k.REFERENCED_TABLE_NAME, k.REFERENCED_COLUMN_NAME, r.UPDATE_RULE, r.DELETE_RULE
-       FROM information_schema.KEY_COLUMN_USAGE k
-       JOIN information_schema.REFERENTIAL_CONSTRAINTS r
-         ON r.CONSTRAINT_SCHEMA = k.CONSTRAINT_SCHEMA AND r.CONSTRAINT_NAME = k.CONSTRAINT_NAME AND r.TABLE_NAME = k.TABLE_NAME
-       WHERE k.TABLE_SCHEMA = ? AND k.TABLE_NAME = ? AND k.REFERENCED_TABLE_NAME IS NOT NULL
-       ORDER BY k.CONSTRAINT_NAME, k.ORDINAL_POSITION`,
-      [database, table]
-    );
-
-    // Índices: llave primaria (en orden) y UNIQUE de una sola columna
-    const indexes = {};
-    indexRows.forEach(r => {
-      if (!indexes[r.INDEX_NAME]) indexes[r.INDEX_NAME] = { unique: Number(r.NON_UNIQUE) === 0, columns: [] };
-      indexes[r.INDEX_NAME].columns.push(r.COLUMN_NAME);
-    });
-    const pkColumns = indexes.PRIMARY ? indexes.PRIMARY.columns : [];
-    const singleUnique = {};
-    let compositeIndexes = 0;
-    Object.entries(indexes).forEach(([name, idx]) => {
-      if (name === 'PRIMARY') return;
-      if (idx.unique && idx.columns.length === 1 && !singleUnique[idx.columns[0]]) singleUnique[idx.columns[0]] = name;
-      else if (idx.columns.length > 1) compositeIndexes++;
-    });
-
-    // Columnas en el formato del diseñador. El orden de la PK se respeta ordenando por su posición.
-    const columns = cols.map((c, i) => {
-      const m = String(c.COLUMN_TYPE).match(/^(\w+)(?:\((.*)\))?\s*(unsigned)?/i) || [];
-      const extra = c.EXTRA || '';
-      const isGenerated = /\b(VIRTUAL|STORED|PERSISTENT)\b/i.test(extra) && c.GENERATION_EXPRESSION;
-      return {
-        id: 'c' + i,
-        origName: c.COLUMN_NAME,
-        name: c.COLUMN_NAME,
-        type: (m[1] || c.COLUMN_TYPE).toUpperCase(),
-        length: m[2] || '',
-        unsigned: !!m[3],
-        pk: pkColumns.includes(c.COLUMN_NAME),
-        nn: c.IS_NULLABLE === 'NO',
-        uq: !!singleUnique[c.COLUMN_NAME],
-        uqIndex: singleUnique[c.COLUMN_NAME] || null,
-        ai: /auto_increment/i.test(extra),
-        def: isGenerated ? '' : normalizeDefault(c.COLUMN_DEFAULT, extra, isMaria),
-        onUpdateNow: /on update current_timestamp/i.test(extra),
-        comment: c.COLUMN_COMMENT || '',
-        locked: !DDLBuilder.TYPES[(m[1] || c.COLUMN_TYPE).toUpperCase()],
-        generated: isGenerated ? { expr: c.GENERATION_EXPRESSION, kind: /STORED|PERSISTENT/i.test(extra) ? 'STORED' : 'VIRTUAL' } : null
-      };
-    });
-    // La PK compuesta debe conservar su orden original
-    const pkOrdered = pkColumns.map(name => columns.find(c => c.name === name)).filter(Boolean);
-    const pkOrderMismatch = pkOrdered.some((c, i) => columns.filter(x => x.pk)[i] !== c);
-
-    // Llaves foráneas agrupadas por nombre de constraint
-    const fkMap = {};
-    fkRows.forEach(r => {
-      if (!fkMap[r.CONSTRAINT_NAME]) {
-        fkMap[r.CONSTRAINT_NAME] = {
-          name: r.CONSTRAINT_NAME, columns: [], refTable: r.REFERENCED_TABLE_NAME, refColumns: [],
-          onDelete: r.DELETE_RULE, onUpdate: r.UPDATE_RULE
-        };
-      }
-      fkMap[r.CONSTRAINT_NAME].columns.push(r.COLUMN_NAME);
-      fkMap[r.CONSTRAINT_NAME].refColumns.push(r.REFERENCED_COLUMN_NAME);
-    });
-    const foreignKeys = Object.values(fkMap).map((fk, i) => {
-      const col = columns.find(c => c.name === fk.columns[0]);
-      return {
-        id: 'f' + i,
-        origName: fk.name,
-        name: fk.name,
-        columnId: col ? col.id : null,
-        refTable: fk.refTable,
-        refColumn: fk.refColumns[0],
-        onDelete: fk.onDelete,
-        onUpdate: fk.onUpdate,
-        multi: fk.columns.length > 1,
-        multiLabel: fk.columns.length > 1 ? `(${fk.columns.join(', ')}) → ${fk.refTable}(${fk.refColumns.join(', ')})` : null
-      };
-    });
-
-    const notes = [];
-    if (compositeIndexes) notes.push(`La tabla tiene ${compositeIndexes} índice(s) de varias columnas; se conservan sin cambios.`);
-    if (pkOrderMismatch) notes.push('La llave primaria compuesta tiene un orden distinto al de las columnas; si la modificas se reordenará.');
-
-    res.json({
-      table: {
-        database,
-        name: table,
-        engine: tableInfo.ENGINE,
-        comment: tableInfo.TABLE_COMMENT || '',
-        columns,
-        foreignKeys
-      },
-      notes,
-      isSystem: SqlUtils.isSystemSchema(database)
-    });
+    res.json(await loadTableStructure(connection, database, table));
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(error.status || 500).json({ error: error.message });
+  } finally {
+    if (connection) await connection.end();
+  }
+});
+
+// ==========================================
+// 1-B. EDICIÓN DE DATOS DESDE EL GRID
+// ==========================================
+/**
+ * Aplica los cambios hechos en el grid (UPDATE / INSERT / DELETE) dentro de
+ * una TRANSACCIÓN: si una sentencia falla, o un UPDATE/DELETE no encuentra
+ * su fila (porque alguien más la cambió), se deshace todo con ROLLBACK.
+ * El SQL se genera aquí con GridSql usando la estructura REAL de la tabla.
+ */
+router.post('/grid/apply', requireConnection, async (req, res) => {
+  const { database, table, changes } = req.body;
+  if (!database || !table || !changes) return res.status(400).json({ error: 'Faltan datos para aplicar los cambios.' });
+  if (SqlUtils.isSystemSchema(database)) {
+    return res.status(403).json({ error: 'No se permite editar datos de las bases de datos del sistema.' });
+  }
+
+  let connection;
+  let inTransaction = false;
+  try {
+    connection = await openConnection(req.body.connectionConfig, database);
+    const { table: structure } = await loadTableStructure(connection, database, table);
+    const built = GridSql.buildChanges(structure, changes);
+    if (built.errors.length) return res.status(400).json({ error: built.errors.join('\n'), errors: built.errors });
+    if (!built.statements.length) return res.status(400).json({ error: 'No hay cambios que aplicar.' });
+
+    await connection.beginTransaction();
+    inTransaction = true;
+    const results = [];
+    for (let i = 0; i < built.statements.length; i++) {
+      const stmt = built.statements[i];
+      let result;
+      try {
+        [result] = await connection.query(stmt.sql);
+      } catch (error) {
+        await connection.rollback();
+        inTransaction = false;
+        return res.status(500).json({
+          error: `${error.message}\n(sentencia ${i + 1} de ${built.statements.length}; se deshicieron todos los cambios)`,
+          failedAt: i + 1,
+          sql: stmt.sql
+        });
+      }
+      if (stmt.expectOne && result.affectedRows !== 1) {
+        await connection.rollback();
+        inTransaction = false;
+        return res.status(409).json({
+          error: `La sentencia ${i + 1} no encontró la fila (quizá otra persona la modificó o eliminó). Se deshicieron todos los cambios; vuelve a ejecutar la consulta.`,
+          failedAt: i + 1,
+          sql: stmt.sql
+        });
+      }
+      results.push({ type: stmt.type, sql: stmt.sql, affectedRows: result.affectedRows, insertId: result.insertId || null });
+    }
+    await connection.commit();
+    inTransaction = false;
+    res.json({ status: 'success', results });
+  } catch (error) {
+    if (inTransaction) { try { await connection.rollback(); } catch (e) { /* conexión perdida */ } }
+    res.status(error.status || 500).json({ error: error.message });
   } finally {
     if (connection) await connection.end();
   }

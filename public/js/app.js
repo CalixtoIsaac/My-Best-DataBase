@@ -351,6 +351,9 @@ async function runScriptQuery(onlySelection = false) {
     return;
   }
 
+  // Si hay ediciones del grid sin aplicar, avisar antes de reemplazar el resultado (result-grid.js)
+  if (typeof ResultGrid !== 'undefined' && !(await ResultGrid.confirmDiscard())) return;
+
   // Protección: pide confirmación si hay DROP, TRUNCATE, DELETE/UPDATE sin WHERE, etc. (safety.js)
   if (typeof SafetyGuard !== 'undefined' && !(await SafetyGuard.confirmScript(sql))) {
     logConsole('Ejecución cancelada por el usuario (operación peligrosa no confirmada).', 'info');
@@ -393,11 +396,26 @@ async function runScriptQuery(onlySelection = false) {
 
     const rowCount = data.rows ? data.rows.length : 0;
     const metrics = `Filas: ${rowCount} | Tiempo: ${duration}ms`;
-    const result = { columns: data.columns || [], rows: data.rows || [], sql, meta: { affectedRows: data.affectedRows || 0 } };
+    // La última sentencia del script, si es un SELECT, es la "consulta base" sobre la que
+    // se aplican los filtros por columna y la edición de datos del grid.
+    const statements = SqlUtils.splitStatements(sql);
+    const lastStatement = statements[statements.length - 1];
+    const baseSql = lastStatement && SqlUtils.isSelectStatement(lastStatement.sql) && (data.columns || []).length
+      ? lastStatement.sql : null;
+    const result = {
+      columns: data.columns || [],
+      rows: data.rows || [],
+      fields: data.fields || [],
+      sql: baseSql || sql,
+      baseSql,
+      metricsText: metrics,
+      meta: { affectedRows: data.affectedRows || 0 }
+    };
 
     // Renderiza la matriz de datos recibida en la tabla interactiva (solo si su pestaña sigue visible)
     if (deliver(result, metrics)) {
-      renderDataGrid(result.columns, result.rows, { ...result.meta, sql });
+      if (typeof ResultGrid !== 'undefined') ResultGrid.render(result);
+      else renderDataGrid(result.columns, result.rows, { ...result.meta, sql });
       // Muestra métricas de rendimiento en la barra de estado (footer)
       document.getElementById('footerMetrics').innerText = metrics;
     }
@@ -407,6 +425,7 @@ async function runScriptQuery(onlySelection = false) {
     const upperSql = sql.toUpperCase();
     if (/\b(CREATE|DROP)\s+(DATABASE|SCHEMA|TABLE|VIEW)\b|\bALTER\s+TABLE\b|\bRENAME\s+TABLE\b/.test(upperSql)) {
       if (typeof Designer !== 'undefined') Designer.invalidate(UI.getConnection() && UI.getConnection().database);
+      if (typeof ResultGrid !== 'undefined') ResultGrid.invalidateStructure();
       loadDatabasesTree();
     }
   } catch (err) {
@@ -526,16 +545,20 @@ function toggleResultView(view) {
   const gridView = document.getElementById('view-grid');
   const logView = document.getElementById('view-log');
 
+  const toolbar = document.getElementById('gridToolbar'); // filtros y edición (result-grid.js)
+
   if (view === 'grid') {
     gridBtn.classList.add('active');
     logBtn.classList.remove('active');
     gridView.style.display = 'block';
     logView.style.display = 'none';
+    if (toolbar) toolbar.style.display = '';
   } else {
     logBtn.classList.add('active');
     gridBtn.classList.remove('active');
     logView.style.display = 'block';
     gridView.style.display = 'none';
+    if (toolbar) toolbar.style.display = 'none';
   }
 }
 

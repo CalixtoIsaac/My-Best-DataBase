@@ -5,6 +5,34 @@ const path = require('path');
 const authRoutes = require('./routes/auth');
 const toolsRoutes = require('./routes/tools');        // Diseñador visual, respaldo y restauración
 const SqlUtils = require('./public/js/sql-utils');    // Análisis de sentencias (compartido con el navegador)
+const { Types: MYSQL_TYPES } = require('mysql2');
+
+/**
+ * Describe cada columna del resultado: de qué tabla/columna REAL proviene y de
+ * qué tipo es. El navegador lo usa para los filtros por columna y para saber
+ * si el resultado se puede editar (todas las columnas vienen de una sola tabla).
+ */
+function describeFields(fields) {
+  const kindOf = (typeName, charset) => {
+    if (['TINY', 'SHORT', 'LONG', 'LONGLONG', 'INT24', 'FLOAT', 'DOUBLE', 'DECIMAL', 'NEWDECIMAL', 'YEAR'].includes(typeName)) return 'number';
+    if (['DATE', 'NEWDATE', 'DATETIME', 'DATETIME2', 'TIMESTAMP', 'TIMESTAMP2', 'TIME', 'TIME2'].includes(typeName)) return 'date';
+    if (['VARCHAR', 'VAR_STRING', 'STRING', 'ENUM', 'SET', 'JSON'].includes(typeName)) return charset === 63 ? 'binary' : 'text';
+    if (['TINY_BLOB', 'MEDIUM_BLOB', 'LONG_BLOB', 'BLOB'].includes(typeName)) return charset === 63 ? 'binary' : 'text';
+    return 'other';
+  };
+  return (fields || []).map(f => {
+    const typeName = MYSQL_TYPES[f.columnType] || String(f.columnType);
+    return {
+      name: f.name,
+      orgName: f.orgName || '',
+      table: f.table || '',
+      orgTable: f.orgTable || '',
+      db: f.schema || f.db || '',
+      mysqlType: typeName,
+      kind: kindOf(typeName, f.characterSet)
+    };
+  });
+}
 const mysql = require('mysql2/promise');
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -79,6 +107,7 @@ app.post('/api/query', async (req, res) => {
     // y sumamos las filas afectadas de las sentencias INSERT/UPDATE/DELETE.
     let columns = [];
     let actualRows = [];
+    let resultFields = [];
     let affectedRows = 0;
     const isMulti = Array.isArray(fields) && (fields.length === 0 || fields.some(f => f === undefined || Array.isArray(f)));
 
@@ -87,6 +116,7 @@ app.post('/api/query', async (req, res) => {
         if (Array.isArray(result) && Array.isArray(fields[idx])) {
           actualRows = result;
           columns = fields[idx].map(field => field.name);
+          resultFields = fields[idx];
         } else if (result && typeof result.affectedRows === 'number') {
           affectedRows += result.affectedRows;
         }
@@ -94,6 +124,7 @@ app.post('/api/query', async (req, res) => {
     } else if (Array.isArray(rows)) {
       actualRows = rows;
       columns = (fields || []).map(field => field.name);
+      resultFields = fields || [];
     } else {
       affectedRows = rows.affectedRows || 0;
     }
@@ -102,6 +133,7 @@ app.post('/api/query', async (req, res) => {
       status: 'success',
       columns: columns,
       rows: actualRows,
+      fields: describeFields(resultFields),
       affectedRows,
       executionTimeMs
     });

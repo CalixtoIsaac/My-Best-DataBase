@@ -73,14 +73,18 @@ const EditorTabs = (() => {
 
   function showResult(t) {
     const footer = document.getElementById('footerMetrics');
-    if (t.result && typeof renderDataGrid === 'function') {
+    if (t.result && typeof ResultGrid !== 'undefined') {
+      ResultGrid.render(t.result);
+    } else if (typeof ResultGrid !== 'undefined') {
+      ResultGrid.clear();
+    } else if (t.result && typeof renderDataGrid === 'function') {
       renderDataGrid(t.result.columns, t.result.rows, { ...t.result.meta, silent: true });
     } else {
       document.getElementById('gridHead').innerHTML = '<tr><th>Mensaje</th></tr>';
       document.getElementById('gridBody').innerHTML = '<tr><td>Ejecuta una consulta SQL para mostrar resultados.</td></tr>';
       window.lastQueryResult = null;
     }
-    if (footer) footer.innerText = t.metrics || 'Filas: 0 | Tiempo: 0ms';
+    if (footer) footer.innerText = (t.result && t.result.metricsText) || t.metrics || 'Filas: 0 | Tiempo: 0ms';
   }
 
   // ---------- Dibujo de la barra de pestañas ----------

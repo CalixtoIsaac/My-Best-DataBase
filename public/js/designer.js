@@ -54,9 +54,15 @@ const Designer = (() => {
     return schemaCache[db];
   }
 
+  /** Olvida la estructura guardada en memoria (también la del editor del grid) */
+  function invalidate(db) {
+    delete schemaCache[db];
+    if (typeof ResultGrid !== 'undefined' && db) ResultGrid.invalidateStructure(db);
+  }
+
   /** Después de crear o modificar algo: refrescar árbol lateral y diagrama ER */
   async function refreshAfterChange(db) {
-    delete schemaCache[db];
+    invalidate(db);
     if (typeof loadDatabasesTree === 'function') await loadDatabasesTree();
     const container = document.getElementById(`tables-list-${db}`);
     if (container && !container.classList.contains('show') && typeof toggleDatabaseNode === 'function') {
@@ -670,6 +676,6 @@ const Designer = (() => {
     addForeignKey,
     submitTable,
     copyTableSql,
-    invalidate: db => { delete schemaCache[db]; }
+    invalidate
   };
 })();
