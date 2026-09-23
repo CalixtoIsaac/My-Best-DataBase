@@ -118,6 +118,26 @@
   color: var(--primary-color, #38bdf8);
 }
 
+.db-delete-button {
+  flex: 0 0 auto;
+  border: 0;
+  padding: 2px 3px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0.7;
+  transition: color 0.15s ease, opacity 0.15s ease;
+}
+
+.db-node-header:hover .db-delete-button,
+.db-delete-button:focus-visible {
+  opacity: 1;
+}
+
+.db-delete-button:hover {
+  color: #ef4444;
+}
+
 .db-node-icon {
   font-size: 13px;
   line-height: 1;

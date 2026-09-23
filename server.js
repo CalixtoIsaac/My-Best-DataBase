@@ -3,6 +3,8 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const authRoutes = require('./routes/auth');
+const toolsRoutes = require('./routes/tools');        // Diseñador visual, respaldo y restauración
+const SqlUtils = require('./public/js/sql-utils');    // Análisis de sentencias (compartido con el navegador)
 const mysql = require('mysql2/promise');
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -11,8 +13,9 @@ const PORT = process.env.PORT || 3000;
 // MIDDLEWARES DE LA APLICACIÓN
 // ==========================================
 app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Límite de 60 MB para poder restaurar archivos .sql grandes
+app.use(express.json({ limit: '60mb' }));
+app.use(express.urlencoded({ extended: true, limit: '60mb' }));
 
 // Servir archivos estáticos (CSS, JS, imágenes) desde /public
 app.use(express.static(path.join(__dirname, 'public')));
@@ -21,6 +24,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 // RUTAS DE LA API
 // ==========================================
 app.use('/api/auth', authRoutes);
+app.use('/api', toolsRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ 
@@ -41,6 +45,13 @@ app.post('/api/query', async (req, res) => {
     return res.status(400).json({ error: 'Falta la configuración de conexión. Por favor configura tu conexión a la base de datos primero.' });
   }
 
+  // Segunda capa de seguridad: aunque el navegador ya pidió confirmación,
+  // nunca se permite eliminar las bases de datos internas de MySQL.
+  const blocked = SqlUtils.findBlockedStatement(sql);
+  if (blocked) {
+    return res.status(403).json({ error: blocked });
+  }
+
   let connection;
   try {
     const startTime = performance.now();
@@ -51,36 +62,47 @@ app.post('/api/query', async (req, res) => {
       user: connectionConfig.user,
       password: connectionConfig.password || '',
       database: connectionConfig.database || undefined,
-      multipleStatements: true // Permite ejecutar scripts con múltiples consultas separadas por ;
+      multipleStatements: true, // Permite ejecutar scripts con múltiples consultas separadas por ;
+      dateStrings: true,        // Muestra fechas tal como están guardadas (sin desfase de zona horaria)
+      typeCast(field, next) {   // Las columnas JSON se muestran/exportan como texto
+        if (field.type === 'JSON' || field.extendedFormat === 'json') return field.string('utf8');
+        return next();
+      }
     });
 
     // Ejecutar la consulta
     const [rows, fields] = await connection.query(sql);
     const executionTimeMs = Math.round(performance.now() - startTime);
 
-    // Formatear los nombres de las columnas
+    // Normalizar la respuesta. Con varias sentencias (multipleStatements) mysql2 devuelve
+    // un arreglo de resultados; mostramos el ÚLTIMO resultado que tenga filas (como Workbench)
+    // y sumamos las filas afectadas de las sentencias INSERT/UPDATE/DELETE.
     let columns = [];
-    if (fields) {
-      columns = fields.map(field => field.name);
-    }
-
-    // Identificar si el resultado es un array de resultados (múltiples sentencias)
-    // Para mantener la simplicidad, si hay múltiples resultados, devolvemos el primero que tenga filas.
-    // De lo contrario devolvemos las filas o un array vacío (para sentencias INSERT, UPDATE, etc.)
     let actualRows = [];
-    if (Array.isArray(rows) && Array.isArray(rows[0]) && Array.isArray(fields[0])) {
-      // Manejo simple para múltiples sentencias: Tomamos el primer set de resultados
-      actualRows = rows[0];
-      columns = fields[0].map(field => field.name);
+    let affectedRows = 0;
+    const isMulti = Array.isArray(fields) && (fields.length === 0 || fields.some(f => f === undefined || Array.isArray(f)));
+
+    if (isMulti) {
+      rows.forEach((result, idx) => {
+        if (Array.isArray(result) && Array.isArray(fields[idx])) {
+          actualRows = result;
+          columns = fields[idx].map(field => field.name);
+        } else if (result && typeof result.affectedRows === 'number') {
+          affectedRows += result.affectedRows;
+        }
+      });
     } else if (Array.isArray(rows)) {
       actualRows = rows;
+      columns = (fields || []).map(field => field.name);
+    } else {
+      affectedRows = rows.affectedRows || 0;
     }
 
     return res.json({
       status: 'success',
       columns: columns,
       rows: actualRows,
-      affectedRows: rows.affectedRows || 0,
+      affectedRows,
       executionTimeMs
     });
   } catch (error) {
@@ -115,6 +137,37 @@ app.post('/api/databases', async (req, res) => {
     return res.json({ databases });
   } catch (error) {
     console.error('Error al listar bases de datos:', error);
+    return res.status(500).json({ error: error.message });
+  } finally {
+    if (connection) {
+      await connection.end();
+    }
+  }
+});
+
+// Eliminar una base de datos después de la confirmación del cliente
+app.delete('/api/databases', async (req, res) => {
+  const { connectionConfig, database } = req.body;
+  if (!connectionConfig || !database) {
+    return res.status(400).json({ error: 'Configuración o base de datos no proporcionada.' });
+  }
+  if (SqlUtils.isSystemSchema(database)) {
+    return res.status(403).json({ error: `La base de datos "${database}" es del sistema y está protegida.` });
+  }
+
+  let connection;
+  try {
+    connection = await mysql.createConnection({
+      host: connectionConfig.host,
+      port: connectionConfig.port || 3306,
+      user: connectionConfig.user,
+      password: connectionConfig.password || ''
+    });
+
+    await connection.query('DROP DATABASE ??', [database]);
+    return res.json({ status: 'success', database });
+  } catch (error) {
+    console.error('Error al eliminar base de datos:', error);
     return res.status(500).json({ error: error.message });
   } finally {
     if (connection) {

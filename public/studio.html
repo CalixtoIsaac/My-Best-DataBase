@@ -7,6 +7,7 @@
   <title>My Best DataBase - Studio</title>
   <link rel="stylesheet" href="css/global.css">
   <link rel="stylesheet" href="css/studio.css">
+  <link rel="stylesheet" href="css/features.css">
 </head>
 
 <body>
@@ -35,6 +36,11 @@
         Ejecutar Selección <small style="opacity: 0.7; font-size: 10px;"> (Ctrl+Shift+Enter)</small></button>
       <button class="btn" onclick="openConverterModal()">🔄 Conversor de Datos</button>
       <button class="btn" onclick="openConnectionModal()">+ Conectar Servidor</button>
+      <span class="toolbar-separator"></span>
+      <button class="btn" onclick="Designer.openCreateDatabase()" title="Crear una base de datos con interfaz gráfica">🗄️ Nueva BD</button>
+      <button class="btn" onclick="Designer.openCreateTable()" title="Diseñar una tabla sin escribir SQL">📐 Nueva Tabla</button>
+      <button class="btn" onclick="Backup.open('backup')" title="Respaldar o restaurar una base de datos (.sql)">💾 Respaldo</button>
+      <button class="btn safe-toggle safe-on" id="safeModeToggle" onclick="SafetyGuard.toggle()">🛡️ Modo seguro: <strong>ON</strong></button>
     </div>
 
     <!-- Espacio de Trabajo Principal -->
@@ -64,6 +70,8 @@
 
         <!-- Contenido 1: Editor SQL -->
         <div class="tab-content active" id="tab-editor">
+          <!-- Pestañas de consultas (editor-tabs.js) -->
+          <div class="query-tabs" id="queryTabs"></div>
           <div class="editor-pane">
             <div class="line-numbers" id="lineNumbers">1</div>
             <div class="code-editor-wrapper">
@@ -81,6 +89,15 @@
               <div class="results-tab active" id="btn-show-grid" onclick="toggleResultView('grid')">Resultados Grid
               </div>
               <div class="results-tab" id="btn-show-log" onclick="toggleResultView('log')">Consola de Salida</div>
+              <!-- Exportación del resultado (export.js) -->
+              <div class="export-actions">
+                <span class="export-label">Exportar:</span>
+                <button class="export-btn" onclick="ResultExporter.exportAs('csv')" title="Valores separados por comas">CSV</button>
+                <button class="export-btn" onclick="ResultExporter.exportAs('xlsx')" title="Libro de Excel (.xlsx)">Excel</button>
+                <button class="export-btn" onclick="ResultExporter.exportAs('json')" title="Arreglo JSON">JSON</button>
+                <button class="export-btn" onclick="ResultExporter.exportAs('sql')" title="Sentencias INSERT">SQL</button>
+                <button class="export-btn" onclick="ResultExporter.copyToClipboard()" title="Copiar para pegar en Excel">📋 Copiar</button>
+              </div>
             </div>
 
             <div class="data-grid-container" id="view-grid">
@@ -116,6 +133,8 @@
             </select>
             <button class="btn" style="padding: 4px 10px; font-size: 11px;" onclick="renderERDiagram()">🔄 Actualizar
               Diagrama</button>
+            <button class="btn" style="padding: 4px 10px; font-size: 11px;"
+              onclick="Designer.openCreateTable(document.getElementById('erDatabaseSelect').value)">📐 Nueva tabla</button>
             <span id="erInfoBadge" style="font-size: 11px; color: var(--text-muted); margin-left: auto;"></span>
           </div>
           <div class="diagram-canvas" id="diagramCanvas"></div>
@@ -208,8 +227,200 @@
     </div>
   </div>
 
+
+  <!-- ==========================================
+       MODAL: NUEVA BASE DE DATOS (designer.js)
+       ========================================== -->
+  <div class="modal-overlay" id="dbDesignerModal">
+    <div class="modal" style="width: 560px;">
+      <div class="modal-header designer-header">
+        <span>🗄️ Nueva base de datos</span>
+        <button class="icon-btn" onclick="Designer.closeDatabaseModal()" title="Cerrar">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-grid">
+          <label class="field">
+            <span>Nombre de la base de datos</span>
+            <input type="text" id="dbDesignerName" class="form-control" placeholder="ej. tienda_online" spellcheck="false" autocomplete="off">
+          </label>
+          <div class="form-row">
+            <label class="field">
+              <span>Juego de caracteres</span>
+              <select id="dbDesignerCharset" class="form-control"></select>
+            </label>
+            <label class="field">
+              <span>Collation (orden y comparación)</span>
+              <select id="dbDesignerCollation" class="form-control"></select>
+            </label>
+          </div>
+          <p class="designer-hint">💡 <strong>utf8mb4</strong> admite acentos, ñ y emojis. Es la opción recomendada.</p>
+        </div>
+        <div class="designer-section-title">Vista previa del SQL</div>
+        <pre class="sql-preview" id="dbDesignerPreview"></pre>
+        <div id="dbDesignerMessages"></div>
+        <label class="check-inline"><input type="checkbox" id="dbDesignerOpenTable" checked> Abrir el diseñador de tablas al terminar</label>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" style="margin-right: auto;" onclick="Designer.copyDatabaseSql()">📝 Copiar al editor</button>
+        <button class="btn" onclick="Designer.closeDatabaseModal()">Cancelar</button>
+        <button class="btn btn-primary" id="dbDesignerSubmit" onclick="Designer.submitDatabase()">Crear base de datos</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       MODAL: DISEÑADOR DE TABLAS (designer.js)
+       ========================================== -->
+  <div class="modal-overlay" id="tableDesignerModal">
+    <div class="modal modal-xl">
+      <div class="modal-header designer-header">
+        <span id="tdTitle">Nueva tabla</span>
+        <span class="designer-counter" id="tdCounter"></span>
+        <button class="icon-btn" onclick="Designer.closeTableDesigner()" title="Cerrar">✕</button>
+      </div>
+      <div class="modal-body designer-body">
+        <div class="designer-meta">
+          <label class="field">
+            <span>Base de datos</span>
+            <select id="tdDatabase" class="form-control"></select>
+          </label>
+          <label class="field">
+            <span>Nombre de la tabla</span>
+            <input type="text" id="tdName" class="form-control" placeholder="ej. clientes" spellcheck="false" autocomplete="off">
+          </label>
+          <label class="field field-small">
+            <span>Motor</span>
+            <select id="tdEngine" class="form-control"></select>
+          </label>
+          <label class="field">
+            <span>Comentario (opcional)</span>
+            <input type="text" id="tdComment" class="form-control" placeholder="Descripción de la tabla">
+          </label>
+        </div>
+        <div id="tdNotes"></div>
+
+        <div class="designer-section-title">
+          Columnas
+          <button class="btn btn-small" onclick="Designer.addColumn()">+ Agregar columna</button>
+          <span class="designer-legend">
+            <b>PK</b> llave primaria · <b>NN</b> no nulo · <b>UQ</b> único · <b>AI</b> auto incremento · <b>UN</b> sin signo
+          </span>
+        </div>
+        <div class="designer-grid-wrap">
+          <table class="designer-grid">
+            <thead>
+              <tr>
+                <th style="width: 44px;"></th>
+                <th>Nombre</th>
+                <th style="width: 130px;">Tipo de dato</th>
+                <th style="width: 130px;">Longitud / Valores</th>
+                <th class="th-check" title="Llave primaria (PRIMARY KEY)">PK</th>
+                <th class="th-check" title="No nulo (NOT NULL)">NN</th>
+                <th class="th-check" title="Único (UNIQUE)">UQ</th>
+                <th class="th-check" title="Auto incremento (AUTO_INCREMENT)">AI</th>
+                <th class="th-check" title="Sin signo (UNSIGNED)">UN</th>
+                <th>Valor por defecto</th>
+                <th style="width: 36px;"></th>
+              </tr>
+            </thead>
+            <tbody id="tdColumns"></tbody>
+          </table>
+        </div>
+
+        <div class="designer-section-title">
+          Relaciones (llaves foráneas)
+          <button class="btn btn-small" onclick="Designer.addForeignKey()">+ Agregar relación</button>
+        </div>
+        <div id="tdForeignKeys"></div>
+
+        <div class="designer-section-title">Vista previa del SQL que se ejecutará</div>
+        <pre class="sql-preview" id="tdPreview"></pre>
+        <div id="tdMessages"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" style="margin-right: auto;" onclick="Designer.copyTableSql()">📝 Copiar SQL al editor</button>
+        <button class="btn" onclick="Designer.closeTableDesigner()">Cancelar</button>
+        <button class="btn btn-primary" id="tdSubmit" onclick="Designer.submitTable()">Crear tabla</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       MODAL: RESPALDO Y RESTAURACIÓN (backup.js)
+       ========================================== -->
+  <div class="modal-overlay" id="backupModal">
+    <div class="modal" style="width: 600px;">
+      <div class="modal-header designer-header">
+        <span>💾 Respaldo y restauración</span>
+        <button class="icon-btn" onclick="Backup.close()" title="Cerrar">✕</button>
+      </div>
+      <div class="bk-tabs">
+        <div class="bk-tab active" data-tab="backup" onclick="Backup.switchTab('backup')">Respaldar (exportar .sql)</div>
+        <div class="bk-tab" data-tab="restore" onclick="Backup.switchTab('restore')">Restaurar (importar .sql)</div>
+      </div>
+
+      <!-- Respaldar -->
+      <div class="modal-body" id="bkPanelBackup">
+        <label class="field">
+          <span>Base de datos a respaldar</span>
+          <select id="bkDatabase" class="form-control"></select>
+        </label>
+        <div class="bk-options">
+          <label class="check-inline"><input type="checkbox" id="bkStructure" checked> Estructura (CREATE TABLE)</label>
+          <label class="check-inline"><input type="checkbox" id="bkData" checked> Datos (INSERT)</label>
+          <label class="check-inline"><input type="checkbox" id="bkDrop" checked> Incluir DROP TABLE IF EXISTS</label>
+          <label class="check-inline"><input type="checkbox" id="bkRoutines" checked> Vistas, triggers y procedimientos</label>
+          <label class="check-inline" title="Útil para restaurar en otro servidor con el mismo nombre">
+            <input type="checkbox" id="bkCreateDb"> Incluir CREATE DATABASE y USE
+          </label>
+        </div>
+        <p class="designer-hint">El archivo .sql también se puede importar en MySQL Workbench, phpMyAdmin o con el comando <code>mysql</code>.</p>
+        <div id="bkResult"></div>
+        <div class="modal-footer" style="margin-top: 14px;">
+          <button class="btn" onclick="Backup.close()">Cerrar</button>
+          <button class="btn btn-primary" id="bkSubmit" onclick="Backup.submitBackup()">💾 Descargar respaldo</button>
+        </div>
+      </div>
+
+      <!-- Restaurar -->
+      <div class="modal-body" id="bkPanelRestore" style="display: none;">
+        <label class="drop-zone" id="rsDropZone">
+          <input type="file" id="rsFile" accept=".sql,text/plain" hidden>
+          <span class="drop-zone-icon">📂</span>
+          <span>Haz clic para elegir un archivo <strong>.sql</strong> o arrástralo aquí</span>
+        </label>
+        <div id="rsFileInfo"></div>
+        <div class="designer-section-title">Base de datos destino</div>
+        <div class="rs-target">
+          <label class="check-inline"><input type="radio" name="rsMode" id="rsModeExisting" checked> Existente:</label>
+          <select id="rsDatabase" class="form-control"></select>
+        </div>
+        <div class="rs-target">
+          <label class="check-inline"><input type="radio" name="rsMode" id="rsModeNew"> Nueva:</label>
+          <input type="text" id="rsNewName" class="form-control" placeholder="ej. tienda_copia" disabled spellcheck="false">
+        </div>
+        <div id="rsResult"></div>
+        <div class="modal-footer" style="margin-top: 14px;">
+          <button class="btn" onclick="Backup.close()">Cerrar</button>
+          <button class="btn btn-primary" id="rsSubmit" onclick="Backup.submitRestore()" disabled>♻️ Restaurar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Módulos compartidos con el servidor -->
+  <script src="js/sql-utils.js"></script>
+  <script src="js/ddl-builder.js"></script>
+  <!-- Aplicación -->
   <script src="js/auth.js"></script>
+  <script src="js/ui-kit.js"></script>
   <script src="js/app.js"></script>
+  <!-- Funciones nuevas -->
+  <script src="js/editor-tabs.js"></script>
+  <script src="js/safety.js"></script>
+  <script src="js/export.js"></script>
+  <script src="js/designer.js"></script>
+  <script src="js/backup.js"></script>
 </body>
 
 </html>

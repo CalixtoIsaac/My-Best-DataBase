@@ -351,7 +351,17 @@ async function runScriptQuery(onlySelection = false) {
     return;
   }
 
+  // Protección: pide confirmación si hay DROP, TRUNCATE, DELETE/UPDATE sin WHERE, etc. (safety.js)
+  if (typeof SafetyGuard !== 'undefined' && !(await SafetyGuard.confirmScript(sql))) {
+    logConsole('Ejecución cancelada por el usuario (operación peligrosa no confirmada).', 'info');
+    return;
+  }
+
   logConsole(`${executionLabel}:\n${sql}`, 'info');
+
+  // Pestañas: el resultado se guarda en la pestaña que lanzó la consulta (editor-tabs.js)
+  const tabId = typeof EditorTabs !== 'undefined' ? EditorTabs.beginRun() : null;
+  const deliver = (result, metrics) => (tabId ? EditorTabs.deliverResult(tabId, result, metrics) : true);
 
   try {
     const startTime = performance.now();
@@ -375,24 +385,32 @@ async function runScriptQuery(onlySelection = false) {
 
     // Si el servidor respondió con un error (Status Code distinto a 2xx)
     if (!res.ok) {
+      deliver(null, null);
       logConsole(`Error en la ejecución: ${data.error}`, 'error');
       toggleResultView('log');
       return;
     }
 
-    // Renderiza la matriz de datos recibida en la tabla interactiva
-    renderDataGrid(data.columns || [], data.rows || []);
-    logConsole(`Consulta ejecutada correctamente. Filas: ${data.rows ? data.rows.length : 0} | Tiempo: ${duration}ms`, 'success');
+    const rowCount = data.rows ? data.rows.length : 0;
+    const metrics = `Filas: ${rowCount} | Tiempo: ${duration}ms`;
+    const result = { columns: data.columns || [], rows: data.rows || [], sql, meta: { affectedRows: data.affectedRows || 0 } };
 
-    // Muestra métricas de rendimiento en la barra de estado (footer)
-    document.getElementById('footerMetrics').innerText = `Filas: ${data.rows ? data.rows.length : 0} | Tiempo: ${duration}ms`;
+    // Renderiza la matriz de datos recibida en la tabla interactiva (solo si su pestaña sigue visible)
+    if (deliver(result, metrics)) {
+      renderDataGrid(result.columns, result.rows, { ...result.meta, sql });
+      // Muestra métricas de rendimiento en la barra de estado (footer)
+      document.getElementById('footerMetrics').innerText = metrics;
+    }
+    logConsole(`Consulta ejecutada correctamente. Filas: ${rowCount}${data.affectedRows ? ` | Afectadas: ${data.affectedRows}` : ''} | Tiempo: ${duration}ms`, 'success');
 
-    // Si la consulta fue un CREATE, DROP, ALTER o USE, refrescar el árbol de esquemas automáticamente
+    // Si la consulta cambió la estructura (CREATE, DROP, ALTER, RENAME), refrescar el árbol de esquemas
     const upperSql = sql.toUpperCase();
-    if (upperSql.includes('CREATE DATABASE') || upperSql.includes('DROP DATABASE') || upperSql.includes('CREATE TABLE') || upperSql.includes('DROP TABLE')) {
+    if (/\b(CREATE|DROP)\s+(DATABASE|SCHEMA|TABLE|VIEW)\b|\bALTER\s+TABLE\b|\bRENAME\s+TABLE\b/.test(upperSql)) {
+      if (typeof Designer !== 'undefined') Designer.invalidate(UI.getConnection() && UI.getConnection().database);
       loadDatabasesTree();
     }
   } catch (err) {
+    deliver(null, null);
     logConsole('Error al comunicar con el servidor.', 'error');
     toggleResultView('log');
   }
@@ -407,9 +425,12 @@ function runCurrentQuery() {
  * Construye de forma dinámica las cabeceras (<th>) y celdas (<td>)
  * dentro del elemento <table> basándose en las columnas y filas enviadas por la DB.
  */
-function renderDataGrid(columns, rows) {
+function renderDataGrid(columns, rows, meta = {}) {
   const head = document.getElementById('gridHead');
   const body = document.getElementById('gridBody');
+
+  // Guarda el resultado actual para poder exportarlo (export.js)
+  window.lastQueryResult = { columns, rows, sql: meta.sql || (window.lastQueryResult && window.lastQueryResult.sql) || '' };
 
   // Limpia el contenido anterior de la tabla
   head.innerHTML = '';
@@ -418,7 +439,7 @@ function renderDataGrid(columns, rows) {
   // Si la consulta no retornó columnas (ej: CREATE TABLE, INSERT o sentencias sin resultados)
   if (columns.length === 0) {
     head.innerHTML = '<tr><th>Resultado</th></tr>';
-    body.innerHTML = '<tr><td>Operación completada sin filas devueltas.</td></tr>';
+    body.innerHTML = `<tr><td>Operación completada sin filas devueltas.${meta.affectedRows ? ` Filas afectadas: ${meta.affectedRows}.` : ''}</td></tr>`;
     toggleResultView('grid');
     return;
   }
@@ -438,7 +459,13 @@ function renderDataGrid(columns, rows) {
     columns.forEach(col => {
       const td = document.createElement('td');
       // Muestra el valor original o la palabra "NULL" en caso de celdas vacías
-      td.innerText = row[col] !== undefined ? row[col] : 'NULL';
+      const value = row[col];
+      if (value === null || value === undefined) {
+        td.innerText = 'NULL';
+        td.className = 'cell-null';
+      } else {
+        td.innerText = typeof value === 'object' ? JSON.stringify(value) : value;
+      }
       tr.appendChild(td);
     });
     body.appendChild(tr);
@@ -611,12 +638,23 @@ function renderDatabasesTree(databases) {
 
   databases.forEach(db => {
     const isSelected = currentDb && currentDb.toLowerCase() === db.toLowerCase();
+    // Las bases de datos del sistema se muestran con candado y sin acciones destructivas
+    const isSystem = typeof SqlUtils !== 'undefined' && SqlUtils.isSystemSchema(db);
+    const actions = isSystem
+      ? `<span class="db-lock" title="Base de datos del sistema: protegida contra cambios">🔒</span>`
+      : `<button class="db-action-button" type="button" title="Nueva tabla en ${db}"
+            onclick="event.stopPropagation(); Designer.openCreateTable('${db}')">➕</button>
+          <button class="db-action-button" type="button" title="Respaldar ${db}"
+            onclick="event.stopPropagation(); Backup.open('backup', '${db}')">💾</button>
+          <button class="db-delete-button" type="button" title="Eliminar base de datos" aria-label="Eliminar ${db}"
+            onclick="event.stopPropagation(); deleteDatabase('${db}')">🗑️</button>`;
     html += `
       <div class="db-tree-item" id="db-item-${db}">
-        <div class="db-node-header ${isSelected ? 'active' : ''}" onclick="toggleDatabaseNode('${db}')">
+        <div class="db-node-header ${isSelected ? 'active' : ''} ${isSystem ? 'system-db' : ''}" onclick="toggleDatabaseNode('${db}')">
           <span class="db-node-arrow" id="arrow-${db}">▶</span>
-          <span class="db-node-icon">🗄️</span>
+          <span class="db-node-icon">${isSystem ? '⚙️' : '🗄️'}</span>
           <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${db}">${db}</span>
+          ${actions}
         </div>
         <div class="db-tables-list" id="tables-list-${db}"></div>
       </div>
@@ -624,6 +662,74 @@ function renderDatabasesTree(databases) {
   });
 
   treeView.innerHTML = html;
+}
+
+/**
+ * Solicita el nombre exacto de la base de datos antes de eliminarla.
+ */
+async function deleteDatabase(dbName) {
+  // Confirmación segura (safety.js): bloquea las BD del sistema, muestra cuántas tablas
+  // se perderán, ofrece respaldar antes y pide escribir el nombre exacto.
+  const confirmed = await SafetyGuard.confirmDropDatabase(dbName);
+  if (!confirmed) return;
+
+  const activeConnection = localStorage.getItem('activeDbConnection');
+  if (!activeConnection) return;
+
+  const config = JSON.parse(activeConnection);
+  try {
+    const res = await fetch('/api/databases', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ connectionConfig: config, database: dbName })
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      UI.alert('No se pudo eliminar', UI.escape(data.error || 'Fallo de conexión'));
+      return;
+    }
+
+    if (config.database && config.database.toLowerCase() === dbName.toLowerCase()) {
+      delete config.database;
+      localStorage.setItem('activeDbConnection', JSON.stringify(config));
+    }
+
+    logConsole(`Base de datos eliminada: ${dbName}`, 'success');
+    UI.toast(`Base de datos "${dbName}" eliminada`, 'success');
+    await loadDatabasesTree();
+  } catch (err) {
+    UI.alert('Error de conexión', 'No se pudo conectar con el servidor para eliminar la base de datos.');
+  }
+}
+
+/**
+ * Elimina una tabla desde el árbol lateral (con confirmación escribiendo su nombre).
+ */
+async function deleteTable(dbName, table) {
+  if (SqlUtils.isSystemSchema(dbName)) return;
+  const confirmed = await SafetyGuard.confirmDropTable(dbName, table);
+  if (!confirmed) return;
+  try {
+    await UI.api('/query', { sql: `DROP TABLE ${DDLBuilder.q(dbName)}.${DDLBuilder.q(table)}` });
+    logConsole(`Tabla eliminada: ${dbName}.${table}`, 'success');
+    UI.toast(`Tabla "${table}" eliminada`, 'success');
+    Designer.invalidate(dbName);
+    await refreshDatabaseNode(dbName);
+  } catch (e) {
+    UI.alert('No se pudo eliminar la tabla', UI.escape(e.message));
+  }
+}
+
+/**
+ * Vuelve a cargar la lista de tablas de una base de datos en el árbol lateral.
+ */
+async function refreshDatabaseNode(dbName) {
+  const container = document.getElementById(`tables-list-${dbName}`);
+  if (!container) return loadDatabasesTree();
+  container.removeAttribute('data-loaded');
+  container.classList.remove('show');
+  await toggleDatabaseNode(dbName);
 }
 
 /**
@@ -676,22 +782,34 @@ async function toggleDatabaseNode(dbName) {
     const tables = data.tables || [];
     tablesContainer.setAttribute('data-loaded', 'true');
 
+    const isSystem = SqlUtils.isSystemSchema(dbName);
+    const newTableLink = isSystem ? '' : `
+      <div class="table-node-item table-node-new" onclick="Designer.openCreateTable('${dbName}')" title="Crear una tabla con el diseñador visual">
+        <span style="font-size: 11px;">➕</span><span>Nueva tabla...</span>
+      </div>`;
+
     if (tables.length === 0) {
-      tablesContainer.innerHTML = `<div style="padding: 4px 8px; font-size: 11px; color: var(--text-muted); font-style: italic;">(Sin tablas)</div>`;
+      tablesContainer.innerHTML = `<div style="padding: 4px 8px; font-size: 11px; color: var(--text-muted); font-style: italic;">(Sin tablas)</div>${newTableLink}`;
       return;
     }
 
     let tablesHtml = '';
     tables.forEach(table => {
+      const tableActions = isSystem ? '' : `
+          <button class="table-action-button" type="button" title="Modificar estructura (diseñador)"
+            onclick="event.stopPropagation(); Designer.openEditTable('${dbName}', '${table}')">✏️</button>
+          <button class="table-action-button danger" type="button" title="Eliminar tabla"
+            onclick="event.stopPropagation(); deleteTable('${dbName}', '${table}')">🗑️</button>`;
       tablesHtml += `
-        <div class="table-node-item" onclick="pasteSelectTable('${dbName}', '${table}')" title="Doble clic o clic para consultar">
+        <div class="table-node-item" onclick="pasteSelectTable('${dbName}', '${table}')" title="Clic para consultar">
           <span style="font-size: 11px;">📋</span>
-          <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${table}</span>
+          <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${table}</span>
+          ${tableActions}
         </div>
       `;
     });
 
-    tablesContainer.innerHTML = tablesHtml;
+    tablesContainer.innerHTML = tablesHtml + newTableLink;
   } catch (err) {
     tablesContainer.innerHTML = `<div style="padding: 4px 8px; font-size: 10px; color: #ef4444;">Error de red</div>`;
   }
@@ -741,9 +859,16 @@ function filterSchemas(text) {
  * al hacer doble clic o seleccionar una tabla de la lista lateral.
  */
 function pasteSelectTable(schema, table) {
+  const sql = `SELECT * FROM ${schema}.${table} LIMIT 100;`;
+  // Con pestañas: se abre en una pestaña nueva si la actual ya tiene un script escrito
+  if (typeof EditorTabs !== 'undefined') {
+    EditorTabs.openWithSql(sql, table);
+    switchTab('tab-editor');
+    return;
+  }
   const editor = document.getElementById('sqlEditor');
   if (!editor) return;
-  editor.value = `SELECT * FROM ${schema}.${table} LIMIT 100;`;
+  editor.value = sql;
   editor.dispatchEvent(new Event('input'));
 }
 
@@ -1006,7 +1131,11 @@ async function renderERDiagram() {
         <div class="er-table-card">
           <div class="er-table-header">
             <span>📋 ${table.name}</span>
-            <span style="font-size: 10px; opacity: 0.7; font-weight: normal;">${table.columns.length} cols</span>
+            <span style="display: flex; align-items: center; gap: 6px;">
+              <span style="font-size: 10px; opacity: 0.7; font-weight: normal;">${table.columns.length} cols</span>
+              ${SqlUtils.isSystemSchema(targetDb) ? '' : `<button class="er-edit-button" type="button" title="Modificar estructura"
+                onclick="Designer.openEditTable('${targetDb}', '${table.name}')">✏️</button>`}
+            </span>
           </div>
           <div class="er-columns-list">
       `;
