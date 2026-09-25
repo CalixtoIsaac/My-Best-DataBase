@@ -5,9 +5,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>My Best DataBase - Studio</title>
+  <!-- Tema: se aplica antes del primer pintado para evitar parpadeos -->
+  <script src="js/theme.js"></script>
+  <link rel="stylesheet" href="css/theme.css">
   <link rel="stylesheet" href="css/global.css">
   <link rel="stylesheet" href="css/studio.css">
   <link rel="stylesheet" href="css/features.css">
+  <link rel="stylesheet" href="css/converter.css">
 </head>
 
 <body>
@@ -21,6 +25,10 @@
     <header class="app-header">
       <div class="brand">My Best <strong>DataBase</strong></div>
       <div class="user-profile">
+        <button type="button" class="theme-toggle" data-theme-toggle aria-pressed="false" title="Cambiar tema">
+          <span class="theme-toggle-track"><span class="theme-toggle-thumb" aria-hidden="true">☾</span></span>
+          <span class="theme-toggle-label">Oscuro</span>
+        </button>
         <span id="userNameDisplay">USUARIO</span>
         <button class="btn" onclick="handleLogout()">Cerrar Sesión</button>
       </div>
@@ -156,26 +164,51 @@
        MODAL: CONVERSOR DE DATOS
        ========================================== -->
   <div class="modal-overlay" id="converterModal">
-    <div class="modal" style="width: 600px;">
-      <div class="modal-header">Conversor de Formatos de Datos</div>
-      <div class="modal-body">
-        <label style="font-weight: bold; display: block; margin-bottom: 6px;">Entrada:</label>
-        <textarea id="converterInput" class="form-control" style="width: 100%; height: 100px; font-family: monospace;"
-          placeholder='Pega aquí tu JSON, CSV o texto...'></textarea>
+    <div class="modal conv-modal">
+      <div class="modal-header designer-header">
+        <span>🔄 Conversor de Formatos de Datos</span>
+        <button class="icon-btn" onclick="closeConverterModal()" title="Cerrar (Esc)">✕</button>
+      </div>
+      <div class="modal-body conv-body">
+        <!-- Flujos Entrada → Salida (converter-ui.js) -->
+        <div class="conv-flows" id="convFlows"></div>
 
-        <div style="display: flex; gap: 8px; margin: 12px 0;">
-          <button class="btn" onclick="convertData('json-to-sql')">JSON a SQL</button>
-          <button class="btn" onclick="convertData('excel-to-sql')">CSV a SQL</button>
-          <button class="btn" onclick="convertData('json-to-markdown')">JSON a Markdown</button>
+        <div class="conv-io-head">
+          <label class="conv-label" id="convInputLabel" for="converterInput">Entrada:</label>
+          <label class="conv-table-field" id="convTableField">
+            <span>Tabla destino</span>
+            <input type="text" id="convTableName" class="form-control" placeholder="automático" spellcheck="false" autocomplete="off">
+          </label>
         </div>
 
-        <label style="font-weight: bold; display: block; margin-bottom: 6px;">Resultado:</label>
-        <textarea id="converterOutput" class="form-control" style="width: 100%; height: 120px; font-family: monospace;"
-          readonly></textarea>
+        <!-- Caja de entrada: acepta texto o archivos arrastrados -->
+        <div class="conv-input-wrap" id="convInputWrap">
+          <textarea id="converterInput" class="form-control conv-textarea" spellcheck="false"
+            placeholder="Pega aquí tu JSON, CSV o SQL..."></textarea>
+
+          <label class="drop-zone conv-drop" id="convDropZone" hidden>
+            <input type="file" id="convFile" accept=".xlsx,.xls,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" hidden>
+            <span class="drop-zone-icon">📊</span>
+            <span>Arrastra tu archivo de Excel aquí o <strong>haz clic para elegirlo</strong></span>
+            <small>.xlsx · .xls — se convierte la primera hoja; la primera fila son los nombres de columna</small>
+          </label>
+
+          <div class="conv-file" id="convFileInfo" hidden></div>
+          <div class="conv-drop-hint">Suelta el archivo para cargarlo</div>
+        </div>
+
+        <div class="conv-message" id="convMessage" hidden></div>
+
+        <div class="conv-io-head">
+          <label class="conv-label" for="converterOutput">Resultado:</label>
+          <span class="conv-stats" id="convStats"></span>
+        </div>
+        <textarea id="converterOutput" class="form-control conv-textarea conv-output" spellcheck="false" readonly></textarea>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-primary" onclick="copyConverterOutput()">Copiar Resultado</button>
-        <button class="btn" onclick="closeConverterModal()">Cerrar</button>
+        <button class="btn" style="margin-right: auto;" onclick="DataConverterUI.clear()">Limpiar</button>
+        <button class="btn" id="convRunBtn" onclick="DataConverterUI.run()" title="Ctrl + Enter">▶ Convertir</button>
+        <button class="btn btn-primary" id="convResultBtn" onclick="DataConverterUI.resultAction()" disabled>📋 Copiar Resultado</button>
       </div>
     </div>
   </div>
@@ -426,6 +459,9 @@
   <script src="js/designer.js"></script>
   <script src="js/backup.js"></script>
   <script src="js/result-grid.js"></script>
+  <!-- Conversor de formatos (SheetJS se carga bajo demanda) -->
+  <script src="js/data-converter.js"></script>
+  <script src="js/converter-ui.js"></script>
 </body>
 
 </html>

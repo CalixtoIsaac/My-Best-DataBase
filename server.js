@@ -48,6 +48,10 @@ app.use(express.urlencoded({ extended: true, limit: '60mb' }));
 // Servir archivos estáticos (CSS, JS, imágenes) desde /public
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Librería SheetJS (lectura/escritura de Excel) para el Conversor de Datos.
+// Se sirve desde node_modules para que funcione sin internet (npm install).
+app.use('/vendor/xlsx', express.static(path.join(__dirname, 'node_modules', 'xlsx', 'dist')));
+
 // ==========================================
 // RUTAS DE LA API
 // ==========================================

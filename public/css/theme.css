@@ -1,0 +1,244 @@
+/* ============================================================================
+   TEMAS: MODO OSCURO (predeterminado) Y MODO CLARO
+   ----------------------------------------------------------------------------
+   Todos los colores de la aplicación salen de estas variables. Cambiar de tema
+   es solo cambiar el atributo <html data-theme="light|dark"> (js/theme.js):
+   el navegador recalcula todo al instante, sin recargar ni tocar el DOM.
+
+   Contraste (WCAG AA ≥ 4.5:1 para texto normal) verificado para:
+   texto principal/secundario, acentos, errores, avisos y colores de sintaxis
+   sobre sus fondos respectivos en ambos temas.
+   ============================================================================ */
+
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;               /* scrollbars, <select>, fechas nativas */
+
+  /* --- Superficies --- */
+  --bg-app: #0a0b10;
+  --bg-dark: #0f1016;               /* barra lateral, números de línea, encabezados */
+  --bg-main: #14151f;               /* editor y área de trabajo */
+  --bg-card: #1c1d2a;               /* barras, tarjetas, modales */
+  --bg-input: #12131c;
+  --bg-elevated: #1e293b;           /* menús flotantes */
+  --bg-elevated-2: #232536;
+  --overlay-bg: rgba(0, 0, 0, 0.7);
+
+  /* --- Texto --- */
+  --text-main: #f0f0f5;
+  --text-muted: #8a8a9e;
+  --text-strong: #ffffff;
+  --text-on-accent: #ffffff;
+  --text-on-warning: #111111;
+  --placeholder: #6e6e84;
+
+  /* --- Bordes y "lavados" (fondos sutiles de hover/selección) --- */
+  --border-color: rgba(255, 255, 255, 0.08);
+  --wash-2: rgba(255, 255, 255, 0.02);
+  --wash-3: rgba(255, 255, 255, 0.03);
+  --wash-4: rgba(255, 255, 255, 0.04);
+  --wash-5: rgba(255, 255, 255, 0.05);
+  --wash-6: rgba(255, 255, 255, 0.06);
+  --wash-8: rgba(255, 255, 255, 0.08);
+  --wash-10: rgba(255, 255, 255, 0.1);
+  --wash-12: rgba(255, 255, 255, 0.12);
+  --wash-14: rgba(255, 255, 255, 0.14);
+  --wash-20: rgba(255, 255, 255, 0.2);
+  --shadow-rgb: 0, 0, 0;
+  --shadow-k: 1;                    /* multiplicador de opacidad de las sombras */
+
+  /* --- Acento --- */
+  --accent-color: #007acc;
+  --accent-hover: #005999;
+  --accent-text: #38bdf8;           /* texto/íconos en color de acento sobre fondo */
+  --focus-ring: rgba(0, 122, 204, 0.35);
+
+  /* --- Estados --- */
+  --error-color: #ff4d4d;
+  --error-bg: rgba(255, 77, 77, 0.12);
+  --error-text: #ff8080;
+  --success-color: #2ed573;
+  --success-bg: rgba(46, 213, 115, 0.12);
+  --success-text: #34d399;
+  --warning-color: #f59e0b;
+  --warning-bg: rgba(245, 158, 11, 0.12);
+  --warning-text: #fbbf24;
+  --danger-color: #ef4444;
+  --danger-hover: #dc2626;
+  --info-bg: rgba(0, 122, 204, 0.12);
+  --info-text: #7cc4f5;
+  --purple-text: #c084fc;
+  --orange-text: #fb923c;
+  --green-text: #a3e635;
+
+  /* --- Editor SQL (resaltado de sintaxis / fórmulas) --- */
+  --syn-keyword: #38bdf8;
+  --syn-string: #a3e635;
+  --syn-number: #fb923c;
+  --syn-comment: #64748b;
+  --syn-function: #c084fc;
+  --editor-caret: #38bdf8;
+  --editor-selection: rgba(56, 189, 248, 0.28);
+  --scroll-thumb: rgba(255, 255, 255, 0.14);
+  --scroll-thumb-hover: rgba(255, 255, 255, 0.24);
+
+  /* --- Diagrama ER --- */
+  --er-header-bg: #1e293b;
+  --er-header-text: #f8fafc;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg-app: #e6e9ef;
+  --bg-dark: #eef1f5;
+  --bg-main: #ffffff;
+  --bg-card: #f8f9fb;
+  --bg-input: #ffffff;
+  --bg-elevated: #ffffff;
+  --bg-elevated-2: #e8ecf2;
+  --overlay-bg: rgba(15, 23, 42, 0.45);
+
+  --text-main: #1a1d27;             /* 16.1:1 sobre blanco */
+  --text-muted: #555c6d;            /*  6.6:1 sobre blanco */
+  --text-strong: #0b0d12;
+  --text-on-accent: #ffffff;
+  --text-on-warning: #ffffff;
+  --placeholder: #7b8190;           /*  4.1:1 (texto de ayuda) */
+
+  --border-color: rgba(15, 23, 42, 0.13);
+  --wash-2: rgba(15, 23, 42, 0.025);
+  --wash-3: rgba(15, 23, 42, 0.035);
+  --wash-4: rgba(15, 23, 42, 0.04);
+  --wash-5: rgba(15, 23, 42, 0.05);
+  --wash-6: rgba(15, 23, 42, 0.06);
+  --wash-8: rgba(15, 23, 42, 0.07);
+  --wash-10: rgba(15, 23, 42, 0.12);
+  --wash-12: rgba(15, 23, 42, 0.12);
+  --wash-14: rgba(15, 23, 42, 0.18);
+  --wash-20: rgba(15, 23, 42, 0.25);
+  --shadow-rgb: 15, 23, 42;
+  --shadow-k: 0.35;
+
+  --accent-color: #0067b8;          /*  5.9:1 con texto blanco */
+  --accent-hover: #00538f;
+  --accent-text: #0369a1;           /*  5.9:1 sobre blanco */
+  --focus-ring: rgba(0, 103, 184, 0.25);
+
+  --error-color: #dc2626;
+  --error-bg: rgba(220, 38, 38, 0.08);
+  --error-text: #b91c1c;            /*  6.5:1 */
+  --success-color: #15803d;
+  --success-bg: rgba(22, 163, 74, 0.1);
+  --success-text: #15803d;          /*  5.0:1 */
+  --warning-color: #b45309;
+  --warning-bg: rgba(217, 119, 6, 0.12);
+  --warning-text: #92400e;          /*  7.1:1 */
+  --danger-color: #dc2626;
+  --danger-hover: #b91c1c;
+  --info-bg: rgba(0, 103, 184, 0.09);
+  --info-text: #0369a1;
+  --purple-text: #7e22ce;           /*  7.0:1 */
+  --orange-text: #c2410c;           /*  5.2:1 */
+  --green-text: #3f6212;            /*  7.6:1 */
+
+  /* Paleta de sintaxis estilo IDE claro */
+  --syn-keyword: #0033b3;           /* 10.3:1 */
+  --syn-string: #067d17;            /*  5.4:1 */
+  --syn-number: #b3410e;            /*  5.6:1 */
+  --syn-comment: #6b7280;           /*  4.8:1 */
+  --syn-function: #7a2cb8;          /*  7.4:1 */
+  --editor-caret: #0033b3;
+  --editor-selection: rgba(0, 103, 184, 0.2);
+  --scroll-thumb: rgba(15, 23, 42, 0.2);
+  --scroll-thumb-hover: rgba(15, 23, 42, 0.32);
+
+  --er-header-bg: #eef1f6;
+  --er-header-text: #0b0d12;
+}
+
+/* Placeholders legibles en ambos temas */
+::placeholder {
+  color: var(--placeholder);
+  opacity: 1;
+}
+
+/* Transición suave SOLO durante el cambio de tema (theme.js agrega la clase
+   un instante); así no se ralentizan hovers ni el editor en el uso normal. */
+html.theme-switching,
+html.theme-switching *,
+html.theme-switching *::before,
+html.theme-switching *::after {
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, fill 0.2s ease !important;
+}
+
+/* ---------- Botón alternador de tema ---------- */
+.theme-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 10px 0 4px;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background: var(--bg-input);
+  color: var(--text-main);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.theme-toggle:hover {
+  border-color: var(--accent-color);
+}
+
+.theme-toggle:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 2px;
+}
+
+.theme-toggle-track {
+  position: relative;
+  width: 38px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--wash-10);
+}
+
+.theme-toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent-color);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  line-height: 1;
+  transition: transform 0.2s ease;
+}
+
+:root[data-theme="light"] .theme-toggle-thumb {
+  transform: translateX(18px);
+  background: #f59e0b;
+}
+
+/* Variante flotante (pantalla de inicio de sesión) */
+.theme-toggle.theme-toggle-floating {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 10000;
+  box-shadow: 0 4px 14px rgba(var(--shadow-rgb), calc(0.35 * var(--shadow-k)));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-toggle-thumb { transition: none; }
+  html.theme-switching * { transition: none !important; }
+}

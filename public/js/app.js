@@ -48,6 +48,53 @@ const SQL_FUNCTIONS = [
   'IFNULL', 'ROUND', 'UPPER', 'LOWER', 'SUBSTRING', 'LENGTH', 'DATE_FORMAT'
 ];
 
+const SQL_KEYWORD_SET = new Set(SQL_KEYWORDS);
+const SQL_FUNCTION_SET = new Set(SQL_FUNCTIONS);
+
+/**
+ * Expresión única del resaltador. Cada alternativa es un grupo:
+ *  1 comentario (-- , # , /* *\/)   2 cadena '...' o "..."   3 identificador `...`
+ *  4 número                         5 palabra
+ * Las cadenas y comentarios sin cerrar se colorean hasta el final (como un IDE).
+ */
+const SQL_TOKEN_RE = /(--[^\n]*|#[^\n]*|\/\*[\s\S]*?(?:\*\/|$))|('(?:''|\\[\s\S]|[^'\\])*(?:'|$)|"(?:""|\\[\s\S]|[^"\\])*(?:"|$))|(`(?:``|[^`])*(?:`|$))|(\b\d+(?:\.\d+)?\b)|([A-Za-z_][\w$]*)/g;
+const SQL_CALL_RE = /\s*\(/y;
+
+function escapeEditorHtml(text) {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/**
+ * Convierte SQL en HTML coloreado recorriendo el texto una sola vez.
+ * El HTML resultante contiene exactamente los mismos caracteres que el textarea
+ * (solo se agregan <span> de color), por eso ambas capas quedan alineadas.
+ */
+function highlightSqlHtml(text) {
+  let html = '';
+  let last = 0;
+  let m;
+  SQL_TOKEN_RE.lastIndex = 0;
+  while ((m = SQL_TOKEN_RE.exec(text)) !== null) {
+    if (m.index > last) html += escapeEditorHtml(text.slice(last, m.index));
+    const token = escapeEditorHtml(m[0]);
+    let cls = null;
+    if (m[1] !== undefined) cls = 'sql-comment';
+    else if (m[2] !== undefined) cls = 'sql-string';
+    else if (m[3] !== undefined) cls = null;                  // `identificador`: sin color
+    else if (m[4] !== undefined) cls = 'sql-number';
+    else {
+      const upper = m[5].toUpperCase();
+      SQL_CALL_RE.lastIndex = SQL_TOKEN_RE.lastIndex;
+      if (SQL_FUNCTION_SET.has(upper) && SQL_CALL_RE.test(text)) cls = 'sql-function';
+      else if (SQL_KEYWORD_SET.has(upper)) cls = 'sql-keyword';
+    }
+    html += cls ? `<span class="${cls}">${token}</span>` : token;
+    last = SQL_TOKEN_RE.lastIndex;
+  }
+  if (last < text.length) html += escapeEditorHtml(text.slice(last));
+  return html;
+}
+
 let autocompleteSelectedIndex = 0;
 let autocompleteMatches = [];
 
@@ -66,70 +113,71 @@ function initEditor() {
 
   if (!editor || !lineNumbers) return;
 
+  let lastHighlightedText = null;
+  let lastLineCount = -1;
+
   /**
-   * Resalta el código SQL aplicando etiquetas span con clases CSS.
+   * Resalta el código SQL en UNA sola pasada (tokenizador).
+   * Antes se encadenaban varios .replace() sobre el HTML ya generado: la regla de
+   * cadenas "..." volvía a coincidir con class="sql-comment" y aparecían etiquetas
+   * rotas en pantalla, además de recorrer el texto ~70 veces por tecla.
+   * Ahora cada fragmento del texto original se clasifica una sola vez y se escapa.
    */
+  let pendingFrame = 0;
+  const renderHighlighting = () => {
+    pendingFrame = 0;
+    const text = editor.value;
+    if (text === lastHighlightedText) return;   // nada cambió (ej. solo se movió el cursor)
+    lastHighlightedText = text;
+    if (!highlightingContent) return;
+    // white-space: pre ignora el último "\n"; el espacio extra mantiene la última línea vacía
+    highlightingContent.innerHTML = highlightSqlHtml(text) + (text.endsWith('\n') || text === '' ? ' ' : '');
+    syncScroll();
+  };
   const updateHighlighting = () => {
-    let text = editor.value;
-    // Escapar caracteres HTML para prevenir inyecciones visuales
-    let escaped = text
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
-
-    // 1. Resaltar comentarios (-- comentario)
-    escaped = escaped.replace(/(--.*?)(?=\n|$)/g, '<span class="sql-comment">$1</span>');
-
-    // 2. Resaltar cadenas de texto ('texto' o "texto")
-    escaped = escaped.replace(/('(?:''|[^'\\]|\\.)*'|"(?:""|[^"\\]|\\.)*")/g, '<span class="sql-string">$1</span>');
-
-    // 3. Resaltar números
-    escaped = escaped.replace(/\b(\d+(?:\.\d+)?)\b/g, '<span class="sql-number">$1</span>');
-
-    // 4. Resaltar funciones SQL
-    SQL_FUNCTIONS.forEach(fn => {
-      const reg = new RegExp(`\\b(${fn})\\b(?=\\s*\\()`, 'gi');
-      escaped = escaped.replace(reg, '<span class="sql-function">$1</span>');
-    });
-
-    // 5. Resaltar palabras clave nativas en azul brillante
-    SQL_KEYWORDS.forEach(kw => {
-      const reg = new RegExp(`\\b(${kw})\\b`, 'gi');
-      escaped = escaped.replace(reg, '<span class="sql-keyword">$1</span>');
-    });
-
-    if (highlightingContent) {
-      highlightingContent.innerHTML = escaped + (text.endsWith('\n') ? '<br>' : '');
+    // Scripts grandes (> 50 KB): se agrupan las teclas y se pinta una vez por cuadro
+    if (editor.value.length > 50000) {
+      if (!pendingFrame) pendingFrame = requestAnimationFrame(renderHighlighting);
+    } else {
+      renderHighlighting();
     }
   };
 
   /**
-   * Calcula el número total de líneas según los saltos de página (\n)
+   * Números de línea: solo se reconstruyen cuando cambia la cantidad de líneas.
    */
   const updateLineNumbers = () => {
-    const lines = editor.value.split('\n').length;
-    let linesHTML = '';
-    for (let i = 1; i <= lines; i++) {
-      linesHTML += i + '<br>';
+    let lines = 1;
+    for (let i = editor.value.indexOf('\n'); i !== -1; i = editor.value.indexOf('\n', i + 1)) lines++;
+    if (lines === lastLineCount) return;
+    lastLineCount = lines;
+    let out = '1';
+    for (let i = 2; i <= lines; i++) out += '\n' + i;
+    lineNumbers.textContent = out;
+  };
+
+  /** Mantiene la capa de color y los números de línea en la misma posición que el textarea */
+  const syncScroll = () => {
+    lineNumbers.scrollTop = editor.scrollTop;
+    if (highlightingPane) {
+      highlightingPane.scrollTop = editor.scrollTop;
+      highlightingPane.scrollLeft = editor.scrollLeft;
     }
-    lineNumbers.innerHTML = linesHTML;
   };
 
   // Evento Input: actualiza números, coloreado y autocompletado
   editor.addEventListener('input', () => {
     updateLineNumbers();
     updateHighlighting();
+    syncScroll();
     handleAutocomplete();
   });
 
   // Evento Scroll: sincroniza el desplazamiento del highlighting y line numbers
-  editor.addEventListener('scroll', () => {
-    lineNumbers.scrollTop = editor.scrollTop;
-    if (highlightingPane) {
-      highlightingPane.scrollTop = editor.scrollTop;
-      highlightingPane.scrollLeft = editor.scrollLeft;
-    }
-  });
+  editor.addEventListener('scroll', syncScroll, { passive: true });
+
+  // Si el tamaño del editor cambia (ventana, panel de resultados), se re-sincroniza
+  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(syncScroll).observe(editor);
 
   // Evento Keydown: navegación del autocompletado y tabulación
   editor.addEventListener('keydown', (e) => {
@@ -176,12 +224,14 @@ function initEditor() {
 
     if (e.key === 'Tab') {
       e.preventDefault();
-      const start = editor.selectionStart;
-      const end = editor.selectionEnd;
-      editor.value = editor.value.substring(0, start) + '  ' + editor.value.substring(end);
-      editor.selectionStart = editor.selectionEnd = start + 2;
-      updateLineNumbers();
-      updateHighlighting();
+      // insertText conserva el historial de deshacer (Ctrl+Z) y dispara 'input'
+      if (!document.execCommand('insertText', false, '  ')) {
+        const start = editor.selectionStart;
+        const end = editor.selectionEnd;
+        editor.value = editor.value.substring(0, start) + '  ' + editor.value.substring(end);
+        editor.selectionStart = editor.selectionEnd = start + 2;
+        editor.dispatchEvent(new Event('input'));
+      }
     }
   });
 
@@ -195,6 +245,7 @@ function initEditor() {
   // Ejecución inicial
   updateLineNumbers();
   updateHighlighting();
+  syncScroll();
 }
 
 /**
@@ -617,7 +668,7 @@ async function loadDatabasesTree() {
 
     if (!res.ok) {
       treeView.innerHTML = `
-        <div style="padding: 12px 10px; font-size: 11px; color: #ef4444; line-height: 1.4;">
+        <div style="padding: 12px 10px; font-size: 11px; color: var(--error-text); line-height: 1.4;">
           Error al obtener esquemas:<br>
           <span style="font-size: 10px;">${data.error || 'Fallo de conexión'}</span>
         </div>
@@ -629,7 +680,7 @@ async function loadDatabasesTree() {
     renderDatabasesTree(currentDatabasesList);
   } catch (err) {
     treeView.innerHTML = `
-      <div style="padding: 12px 10px; font-size: 11px; color: #ef4444;">
+      <div style="padding: 12px 10px; font-size: 11px; color: var(--error-text);">
         No se pudo conectar con el servidor.
       </div>
     `;
@@ -798,7 +849,7 @@ async function toggleDatabaseNode(dbName) {
     const data = await res.json();
 
     if (!res.ok) {
-      tablesContainer.innerHTML = `<div style="padding: 4px 8px; font-size: 10px; color: #ef4444;">Error al cargar tablas</div>`;
+      tablesContainer.innerHTML = `<div style="padding: 4px 8px; font-size: 10px; color: var(--error-text);">Error al cargar tablas</div>`;
       return;
     }
 
@@ -834,7 +885,7 @@ async function toggleDatabaseNode(dbName) {
 
     tablesContainer.innerHTML = tablesHtml + newTableLink;
   } catch (err) {
-    tablesContainer.innerHTML = `<div style="padding: 4px 8px; font-size: 10px; color: #ef4444;">Error de red</div>`;
+    tablesContainer.innerHTML = `<div style="padding: 4px 8px; font-size: 10px; color: var(--error-text);">Error de red</div>`;
   }
 }
 
@@ -898,94 +949,9 @@ function pasteSelectTable(schema, table) {
 // ==========================================
 // 6. MODAL DE CONVERSOR DE DATOS
 // ==========================================
-/**
- * Muestra el modal del conversor de datos en pantalla.
- */
-function openConverterModal() {
-  document.getElementById('converterModal').style.display = 'flex';
-}
-
-/**
- * Oculta la ventana modal del conversor de datos.
- */
-function closeConverterModal() {
-  document.getElementById('converterModal').style.display = 'none';
-}
-
-/**
- * Transforma datos en tiempo real entre múltiples formatos estructurados:
- * - JSON a sentencias SQL (INSERT INTO)
- * - SQL a JSON
- * - Tablas tipo Excel/CSV a sentencias SQL
- * - JSON a Tablas con formato Markdown
- * @param {string} type - Identificador del tipo de conversión deseada.
- */
-function convertData(type) {
-  const input = document.getElementById('converterInput').value.trim();
-  const output = document.getElementById('converterOutput');
-
-  if (!input) {
-    output.value = 'Por favor ingresa un texto o datos de entrada para convertir.';
-    return;
-  }
-
-  try {
-    // 1. Transforma arreglos de objetos JSON a código SQL de inserción
-    if (type === 'json-to-sql') {
-      const parsed = JSON.parse(input);
-      const arr = Array.isArray(parsed) ? parsed : [parsed];
-      if (arr.length === 0) return;
-
-      const keys = Object.keys(arr[0]);
-      let sql = `INSERT INTO mi_tabla (${keys.join(', ')}) VALUES\n`;
-      const values = arr.map(row => {
-        const valStr = keys.map(k => typeof row[k] === 'string' ? `'${row[k]}'` : row[k]).join(', ');
-        return `(${valStr})`;
-      });
-      sql += values.join(',\n') + ';';
-      output.value = sql;
-    }
-    // 2. Transforma consultas o datos SQL a formato objeto JSON
-    else if (type === 'sql-to-json') {
-      output.value = JSON.stringify([{ id: 1, mensaje: 'Respuesta generada desde SQL' }], null, 2);
-    }
-    // 3. Transforma filas separadas por comas (CSV/Excel) a sentencias SQL
-    else if (type === 'excel-to-sql') {
-      const lines = input.split('\n');
-      if (lines.length < 2) return;
-      const headers = lines[0].split(',').map(h => h.trim());
-      let sql = `INSERT INTO tabla_importada (${headers.join(', ')}) VALUES\n`;
-      const rows = lines.slice(1).map(line => {
-        const vals = line.split(',').map(v => `'${v.trim()}'`).join(', ');
-        return `(${vals})`;
-      });
-      output.value = sql + rows.join(',\n') + ';';
-    }
-    // 4. Transforma un objeto JSON en una tabla formateada para archivos Markdown (.md)
-    else if (type === 'json-to-markdown') {
-      const parsed = JSON.parse(input);
-      const arr = Array.isArray(parsed) ? parsed : [parsed];
-      const keys = Object.keys(arr[0]);
-      let md = `| ${keys.join(' | ')} |\n| ${keys.map(() => '---').join(' | ')} |\n`;
-      arr.forEach(row => {
-        md += `| ${keys.map(k => row[k]).join(' | ')} |\n`;
-      });
-      output.value = md;
-    }
-  } catch (e) {
-    output.value = 'Error al convertir: Asegúrate de que el formato de entrada sea válido.';
-  }
-}
-
-/**
- * Selecciona y copia automáticamente el resultado generado en el conversor al portapapeles.
- */
-function copyConverterOutput() {
-  const output = document.getElementById('converterOutput');
-  output.select();
-  document.execCommand('copy');
-  alert('¡Resultado copiado al portapapeles!');
-}
+// Movido a js/converter-ui.js (interfaz) y js/data-converter.js (parser SQL,
+// CSV, JSON y Excel). Allí se definen openConverterModal(), closeConverterModal(),
+// convertData() y copyConverterOutput().
 
 // ==========================================
 // 7. MODALES Y DIAGRAMA ER
@@ -1120,7 +1086,7 @@ async function renderERDiagram() {
     if (!res.ok) {
       canvas.innerHTML = `
         <div class="er-empty-state">
-          <h4 style="color: #ef4444; margin-bottom: 6px;">Error al generar diagrama</h4>
+          <h4 style="color: var(--error-text); margin-bottom: 6px;">Error al generar diagrama</h4>
           <p style="font-size: 11px;">${data.error || 'No se pudo cargar el esquema'}</p>
         </div>
       `;
@@ -1203,9 +1169,9 @@ async function renderERDiagram() {
       relations.forEach(rel => {
         html += `
           <div class="er-relation-tag">
-            <strong style="color: #38bdf8;">${rel.fromTable}</strong>.${rel.fromColumn}
+            <strong style="color: var(--accent-text);">${rel.fromTable}</strong>.${rel.fromColumn}
             <span>➔</span>
-            <strong style="color: #34d399;">${rel.toTable}</strong>.${rel.toColumn}
+            <strong style="color: var(--success-text);">${rel.toTable}</strong>.${rel.toColumn}
           </div>
         `;
       });
@@ -1220,7 +1186,7 @@ async function renderERDiagram() {
   } catch (err) {
     canvas.innerHTML = `
       <div class="er-empty-state">
-        <h4 style="color: #ef4444;">Error de conexión</h4>
+        <h4 style="color: var(--error-text);">Error de conexión</h4>
         <p style="font-size: 11px;">No se pudo comunicar con el servidor para consultar el esquema.</p>
       </div>
     `;

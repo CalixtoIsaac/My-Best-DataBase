@@ -1,18 +1,4 @@
-:root {
-  --bg-dark: #0f1016;
-  --bg-main: #14151f;
-  --bg-card: #1c1d2a;
-  --bg-input: #12131c;
-  --accent-color: #007acc;
-  --accent-hover: #005999;
-  --border-color: rgba(255, 255, 255, 0.08);
-  --text-main: #f0f0f5;
-  --text-muted: #8a8a9e;
-  --error-color: #ff4d4d;
-  --error-bg: rgba(255, 77, 77, 0.12);
-  --success-color: #2ed573;
-  --success-bg: rgba(46, 213, 115, 0.12);
-}
+/* Los colores de ambos temas viven en css/theme.css (cargado antes que este archivo). */
 
 * {
   box-sizing: border-box;
@@ -22,7 +8,7 @@
 }
 
 body {
-  background-color: #0a0b10;
+  background-color: var(--bg-app);
   color: var(--text-main);
   height: 100vh;
   overflow: hidden;
@@ -47,14 +33,14 @@ body {
 }
 
 .btn:hover {
-  background-color: rgba(255, 255, 255, 0.08);
-  color: #ffffff;
+  background-color: var(--wash-8);
+  color: var(--text-strong);
 }
 
 .btn-primary {
   background-color: var(--accent-color);
   border-color: var(--accent-color);
-  color: #ffffff;
+  color: var(--text-on-accent);
 }
 
 .btn-primary:hover {
@@ -78,8 +64,8 @@ body {
 }
 
 .form-control {
-  background: rgba(10, 11, 16, 0.8);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--bg-input);
+  border: 1px solid var(--wash-10);
   color: var(--text-main);
   padding: 10px 12px;
   border-radius: 6px;
@@ -90,7 +76,7 @@ body {
 
 .form-control:focus {
   border-color: var(--accent-color);
-  box-shadow: 0 0 8px rgba(0, 122, 204, 0.3);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 /* VENTANAS MODALES */
@@ -101,7 +87,7 @@ body {
   left: 0;
   width: 100vw;
   height: 100vh;
-  background: rgba(0, 0, 0, 0.7);
+  background: var(--overlay-bg);
   justify-content: center;
   align-items: center;
   z-index: 9999;
@@ -114,7 +100,7 @@ body {
   border-radius: 8px;
   padding: 20px;
   width: 460px;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 10px 25px rgba(var(--shadow-rgb), calc(0.5 * var(--shadow-k)));
 }
 
 .modal-header {

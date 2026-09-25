@@ -4,13 +4,7 @@
    ============================================================================ */
 
 /* ---------- Colores adicionales ---------- */
-:root {
-  --warning-color: #f59e0b;
-  --warning-bg: rgba(245, 158, 11, 0.12);
-  --danger-color: #ef4444;
-  --danger-hover: #dc2626;
-  --info-bg: rgba(0, 122, 204, 0.12);
-}
+/* --warning-*, --danger-* e --info-bg se definen por tema en css/theme.css */
 
 /* ---------- Barra de herramientas ---------- */
 .toolbar-separator {
@@ -45,7 +39,7 @@
 .btn-danger {
   background-color: var(--danger-color);
   border-color: var(--danger-color);
-  color: #fff;
+  color: var(--text-on-accent);
 }
 
 .btn-danger:hover {
@@ -74,7 +68,7 @@
 }
 
 .icon-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--wash-8);
   color: var(--text-main);
 }
 
@@ -116,7 +110,7 @@
 }
 
 .qtab:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--wash-4);
   color: var(--text-main);
 }
 
@@ -154,7 +148,7 @@
 
 .qtab-close:hover {
   opacity: 1;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--wash-10);
 }
 
 .qtab-rename {
@@ -180,7 +174,7 @@
 
 .qtab-add:hover {
   color: var(--text-main);
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--wash-5);
 }
 
 /* ---------- Exportar resultados ---------- */
@@ -252,7 +246,7 @@
 .db-action-button:hover,
 .table-action-button:hover {
   opacity: 1 !important;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--wash-10);
 }
 
 .table-action-button.danger:hover {
@@ -274,7 +268,7 @@
 }
 
 .table-node-new:hover {
-  color: #38bdf8;
+  color: var(--accent-text);
 }
 
 .er-edit-button {
@@ -289,7 +283,7 @@
 
 .er-edit-button:hover {
   opacity: 1;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--wash-10);
 }
 
 /* ---------- Modales grandes y formularios ---------- */
@@ -423,7 +417,7 @@ select.form-control:disabled {
   border-radius: 3px;
   font-family: 'Consolas', monospace;
   font-size: 11.5px;
-  color: #38bdf8;
+  color: var(--accent-text);
 }
 
 /* Tabla de columnas del diseñador */
@@ -460,7 +454,7 @@ select.form-control:disabled {
 
 .designer-grid td {
   padding: 4px 6px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid var(--wash-4);
   vertical-align: middle;
 }
 
@@ -469,7 +463,7 @@ select.form-control:disabled {
 }
 
 .designer-grid tr:hover td {
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--wash-2);
 }
 
 .designer-grid tr.row-new td {
@@ -536,7 +530,7 @@ select.form-control:disabled {
   padding: 2px 7px;
   border-radius: 4px;
   background: rgba(192, 132, 252, 0.12);
-  color: #c084fc;
+  color: var(--purple-text);
   font-family: 'Consolas', monospace;
   max-width: 260px;
   overflow: hidden;
@@ -622,19 +616,19 @@ select.form-control:disabled {
 
 .designer-msg.error {
   background: var(--error-bg);
-  color: #ff8080;
+  color: var(--error-text);
   border-left: 3px solid var(--error-color);
 }
 
 .designer-msg.warning {
   background: var(--warning-bg);
-  color: #fbbf24;
+  color: var(--warning-text);
   border-left: 3px solid var(--warning-color);
 }
 
 .designer-msg.info {
   background: var(--info-bg);
-  color: #7cc4f5;
+  color: var(--info-text);
   border-left: 3px solid var(--accent-color);
 }
 
@@ -736,12 +730,12 @@ select.form-control:disabled {
 
 .risk-high .risk-badge {
   background: var(--danger-color);
-  color: #fff;
+  color: var(--text-on-accent);
 }
 
 .risk-medium .risk-badge {
   background: var(--warning-color);
-  color: #111;
+  color: var(--text-on-warning);
 }
 
 .risk-line {
@@ -792,7 +786,7 @@ select.form-control:disabled {
   padding: 9px 14px;
   font-size: 12.5px;
   max-width: 380px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 8px 24px rgba(var(--shadow-rgb), calc(0.45 * var(--shadow-k)));
   animation: toast-in 0.2s ease;
   transition: opacity 0.35s ease, transform 0.35s ease;
 }
@@ -976,7 +970,7 @@ select.form-control:disabled {
   gap: 4px;
   background: var(--info-bg);
   border: 1px solid rgba(0, 122, 204, 0.4);
-  color: #7cc4f5;
+  color: var(--info-text);
   border-radius: 12px;
   padding: 2px 4px 2px 9px;
   font-family: 'Consolas', monospace;
@@ -994,7 +988,7 @@ select.form-control:disabled {
 .filter-chip.sort-chip {
   background: rgba(192, 132, 252, 0.1);
   border-color: rgba(192, 132, 252, 0.4);
-  color: #c084fc;
+  color: var(--purple-text);
 }
 
 .chip-x {
@@ -1011,7 +1005,7 @@ select.form-control:disabled {
 
 .chip-x:hover {
   opacity: 1;
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--wash-12);
 }
 
 .grid-link {
@@ -1024,7 +1018,7 @@ select.form-control:disabled {
 }
 
 .grid-link:hover {
-  color: #38bdf8;
+  color: var(--accent-text);
   text-decoration: underline;
 }
 
@@ -1046,13 +1040,13 @@ select.form-control:disabled {
 .grid-btn.active {
   border-color: var(--accent-color);
   background: var(--info-bg);
-  color: #7cc4f5;
+  color: var(--info-text);
 }
 
 .grid-btn.primary {
   background: var(--accent-color);
   border-color: var(--accent-color);
-  color: #fff;
+  color: var(--text-on-accent);
 }
 
 .grid-btn.primary:hover {
@@ -1060,7 +1054,7 @@ select.form-control:disabled {
 }
 
 .grid-btn.danger {
-  color: #ff8080;
+  color: var(--error-text);
   border-color: rgba(239, 68, 68, 0.45);
 }
 
@@ -1084,12 +1078,12 @@ select.form-control:disabled {
 }
 
 .edit-badge.readonly {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--wash-5);
   color: var(--text-muted);
 }
 
 .pending-count {
-  color: #fbbf24;
+  color: var(--warning-text);
   font-weight: 600;
 }
 
@@ -1101,11 +1095,11 @@ select.form-control:disabled {
 
 .data-table th.th-clickable:hover {
   color: var(--text-main);
-  background: #232536;
+  background: var(--bg-elevated-2);
 }
 
 .data-table th.th-filtered {
-  color: #7cc4f5;
+  color: var(--info-text);
   box-shadow: inset 0 -2px 0 var(--accent-color);
 }
 
@@ -1123,7 +1117,7 @@ select.form-control:disabled {
 }
 
 .th-sort {
-  color: #c084fc;
+  color: var(--purple-text);
   font-size: 9px;
 }
 
@@ -1169,7 +1163,7 @@ select.form-control:disabled {
 
 .data-table td.rownum-selectable:hover {
   color: var(--text-main);
-  background: #232536;
+  background: var(--bg-elevated-2);
 }
 
 /* Estados de filas y celdas */
@@ -1179,19 +1173,19 @@ select.form-control:disabled {
 
 .data-table tr.row-selected td.rownum {
   background: var(--accent-color);
-  color: #fff;
+  color: var(--text-on-accent);
 }
 
 .data-table tr.row-deleted td {
   background: rgba(239, 68, 68, 0.1);
-  color: #ff8080;
+  color: var(--error-text);
   text-decoration: line-through;
 }
 
 .data-table tr.row-deleted td.rownum {
   text-decoration: none;
   background: rgba(239, 68, 68, 0.3);
-  color: #fff;
+  color: var(--text-strong);
 }
 
 .data-table tr.row-new td {
@@ -1281,9 +1275,9 @@ select.cell-input {
   z-index: 9000;
   width: 300px;
   background: var(--bg-card);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid var(--wash-14);
   border-radius: 8px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 12px 32px rgba(var(--shadow-rgb), calc(0.55 * var(--shadow-k)));
   padding: 12px;
   font-size: 12px;
   color: var(--text-main);
@@ -1308,13 +1302,13 @@ select.cell-input {
   letter-spacing: 0.4px;
   padding: 1px 6px;
   border-radius: 3px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--wash-8);
   color: var(--text-muted);
 }
 
-.kind-badge.kind-number { background: rgba(251, 146, 60, 0.15); color: #fb923c; }
-.kind-badge.kind-text { background: rgba(163, 230, 53, 0.12); color: #a3e635; }
-.kind-badge.kind-date { background: rgba(56, 189, 248, 0.12); color: #38bdf8; }
+.kind-badge.kind-number { background: rgba(251, 146, 60, 0.15); color: var(--orange-text); }
+.kind-badge.kind-text { background: rgba(163, 230, 53, 0.12); color: var(--green-text); }
+.kind-badge.kind-date { background: rgba(56, 189, 248, 0.12); color: var(--accent-text); }
 
 .pop-src {
   margin-left: auto;
@@ -1366,7 +1360,7 @@ select.cell-input {
 }
 
 .pop-error {
-  color: #ff8080;
+  color: var(--error-text);
   font-family: inherit;
 }
 
@@ -1394,9 +1388,9 @@ select.cell-input {
   font-family: 'Consolas', monospace;
 }
 
-.sum-chip.update { background: rgba(245, 158, 11, 0.18); color: #fbbf24; }
+.sum-chip.update { background: rgba(245, 158, 11, 0.18); color: var(--warning-text); }
 .sum-chip.insert { background: var(--success-bg); color: var(--success-color); }
-.sum-chip.delete { background: rgba(239, 68, 68, 0.18); color: #ff8080; }
+.sum-chip.delete { background: rgba(239, 68, 68, 0.18); color: var(--error-text); }
 
 .review-sql {
   max-height: 300px;

@@ -1,0 +1,323 @@
+/* ============================================================================
+   CONVERSOR DE FORMATOS DE DATOS (converter-ui.js)
+   Mantiene la paleta oscura del Studio (variables de global.css / features.css)
+   ============================================================================ */
+
+.conv-modal {
+  width: min(760px, 96vw);
+}
+
+.conv-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ---------- Flujos Entrada → Salida ---------- */
+.conv-flows {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.conv-flow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.conv-flow.active {
+  border-color: rgba(0, 122, 204, 0.55);
+  background: var(--info-bg);
+}
+
+.conv-flow-source {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 70px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.conv-flow-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 11px;
+  color: var(--accent-color);
+}
+
+.conv-flow-arrow {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.conv-flow-targets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.conv-chip {
+  background: var(--bg-card);
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.conv-chip small {
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+.conv-chip:hover {
+  color: var(--text-main);
+  border-color: var(--wash-20);
+}
+
+.conv-chip.active {
+  background: var(--accent-color);
+  border-color: var(--accent-color);
+  color: var(--text-on-accent);
+}
+
+.conv-chip:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 2px;
+}
+
+/* ---------- Encabezados de entrada / salida ---------- */
+.conv-io-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 28px;
+}
+
+.conv-label {
+  font-weight: bold;
+  color: var(--text-main);
+  font-size: 12.5px;
+}
+
+.conv-stats {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.conv-table-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.conv-table-field .form-control {
+  width: 190px;
+  padding: 5px 8px;
+  font-size: 12px;
+  font-family: Consolas, 'Courier New', monospace;
+}
+
+.conv-table-field[hidden] {
+  display: none;
+}
+
+/* ---------- Caja de entrada con arrastre ---------- */
+.conv-input-wrap {
+  position: relative;
+}
+
+.conv-textarea {
+  width: 100%;
+  height: 150px;
+  resize: vertical;
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 12.5px;
+  line-height: 1.45;
+  tab-size: 2;
+}
+
+.conv-output {
+  height: 170px;
+  color: var(--text-main);
+}
+
+.conv-drop {
+  min-height: 150px;
+  justify-content: center;
+}
+
+.conv-drop small {
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.conv-drop[hidden],
+.conv-file[hidden],
+.conv-message[hidden],
+.conv-textarea[hidden] {
+  display: none;
+}
+
+/* Capa que aparece al arrastrar un archivo sobre la entrada */
+.conv-drop-hint {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--accent-color);
+  border-radius: 8px;
+  background: rgba(0, 122, 204, 0.18);
+  color: var(--text-main);
+  font-weight: 600;
+  font-size: 13px;
+  pointer-events: none;
+  backdrop-filter: blur(1px);
+}
+
+.conv-input-wrap.dragging .conv-drop-hint {
+  display: flex;
+}
+
+/* Archivo cargado */
+.conv-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--bg-input);
+  border: 1px solid rgba(46, 213, 115, 0.35);
+  border-radius: 8px;
+}
+
+.conv-file-icon {
+  font-size: 22px;
+}
+
+.conv-file-meta {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.conv-file-meta strong {
+  color: var(--text-main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conv-file-meta small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+/* ---------- Mensajes (errores, avisos, éxito) ---------- */
+.conv-message {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 9px 12px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  border: 1px solid transparent;
+  animation: conv-in 0.18s ease;
+}
+
+.conv-message ul {
+  margin: 2px 0 0 16px;
+}
+
+.conv-message code {
+  font-family: Consolas, 'Courier New', monospace;
+}
+
+.conv-message-icon {
+  line-height: 1.4;
+}
+
+.conv-error {
+  background: var(--error-bg);
+  border-color: rgba(255, 77, 77, 0.35);
+  color: var(--text-main);
+}
+
+.conv-error strong {
+  color: var(--error-text);
+}
+
+.conv-warning strong {
+  color: var(--warning-text);
+}
+
+.conv-success strong {
+  color: var(--success-text);
+}
+
+.conv-warning {
+  background: var(--warning-bg);
+  border-color: rgba(245, 158, 11, 0.35);
+  color: var(--text-main);
+}
+
+.conv-success {
+  background: var(--success-bg);
+  border-color: rgba(46, 213, 115, 0.35);
+  color: var(--text-main);
+}
+
+.conv-info {
+  background: var(--info-bg);
+  border-color: rgba(0, 122, 204, 0.35);
+  color: var(--text-main);
+}
+
+@keyframes conv-in {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ---------- Botón de resultado dinámico ---------- */
+#convResultBtn.conv-download {
+  background: #1d7a46;
+  border-color: #1d7a46;
+}
+
+#convResultBtn.conv-download:hover:not(:disabled) {
+  background: #16633a;
+}
+
+@media (max-width: 640px) {
+  .conv-flows {
+    grid-template-columns: 1fr;
+  }
+
+  .conv-io-head {
+    flex-wrap: wrap;
+  }
+}

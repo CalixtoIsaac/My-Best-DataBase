@@ -15,7 +15,8 @@
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
     "mysql2": "^3.24.2",
-    "nodemailer": "^6.10.1"
+    "nodemailer": "^6.10.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "electron": "^30.5.1",

@@ -10,10 +10,19 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@700;800;900&display=swap" rel="stylesheet">
 
+  <!-- Tema: se aplica antes del primer pintado para evitar parpadeos -->
+  <script src="js/theme.js"></script>
+  <link rel="stylesheet" href="css/theme.css">
   <link rel="stylesheet" href="css/global.css">
   <link rel="stylesheet" href="css/login.css">
 </head>
 <body>
+
+  <!-- Alternador de tema flotante -->
+  <button type="button" class="theme-toggle theme-toggle-floating" data-theme-toggle aria-pressed="false" title="Cambiar tema">
+    <span class="theme-toggle-track"><span class="theme-toggle-thumb" aria-hidden="true">☾</span></span>
+    <span class="theme-toggle-label">Oscuro</span>
+  </button>
 
   <!-- ==========================================
        PANTALLA DE AUTENTICACIÓN
