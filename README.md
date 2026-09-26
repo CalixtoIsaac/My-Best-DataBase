@@ -340,7 +340,7 @@ My-Best-DataBase/
 ## 16. Autores
 
 | Nombre | Rol |
-|---|---|---|
+|---|---|
 | Calixto Isaac Galeana Medrano | Desarrollo y documentación |
 | Kevin Ramos  | UI/UX y LOGIN |
 | David | Design Thinking y Scrum  |
