@@ -583,6 +583,10 @@ function switchTab(tabId) {
     document.getElementById('tab-btn-er').classList.add('active');
     document.getElementById('tab-er').classList.add('active');
     renderERDiagram(); // Dibuja o actualiza el diagrama ER al hacer visible la pestaña
+  } else if (tabId === 'tab-qb') {
+    document.getElementById('tab-btn-qb').classList.add('active');
+    document.getElementById('tab-qb').classList.add('active');
+    if (typeof QueryBuilder !== 'undefined') QueryBuilder.onShow(); // Carga tablas y relaciones del esquema
   }
 }
 

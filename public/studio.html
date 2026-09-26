@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="css/studio.css">
   <link rel="stylesheet" href="css/features.css">
   <link rel="stylesheet" href="css/converter.css">
+  <link rel="stylesheet" href="css/query-builder.css">
 </head>
 
 <body>
@@ -74,6 +75,7 @@
         <div class="tab-bar">
           <div class="tab active" id="tab-btn-editor" onclick="switchTab('tab-editor')">Editor SQL</div>
           <div class="tab" id="tab-btn-er" onclick="switchTab('tab-er')">Diagrama ER</div>
+          <div class="tab" id="tab-btn-qb" onclick="switchTab('tab-qb')">🧩 Constructor de Consultas</div>
         </div>
 
         <!-- Contenido 1: Editor SQL -->
@@ -149,6 +151,68 @@
             <span id="erInfoBadge" style="font-size: 11px; color: var(--text-muted); margin-left: auto;"></span>
           </div>
           <div class="diagram-canvas" id="diagramCanvas"></div>
+        </div>
+
+        <!-- Contenido 3: Constructor Visual de Consultas (query-builder.js) -->
+        <div class="tab-content" id="tab-qb">
+          <div class="qb-root" id="qbRoot">
+            <!-- Panel izquierdo: esquema y tablas -->
+            <aside class="qb-side">
+              <div class="qb-side-head">
+                <label class="field">
+                  <span>Base de datos</span>
+                  <div class="qb-db-row">
+                    <select id="qbDatabase" class="form-control qb-select"></select>
+                    <button class="btn btn-small" id="qbRefresh" title="Volver a leer tablas y relaciones">🔄</button>
+                  </div>
+                </label>
+                <input type="text" id="qbSearch" class="form-control qb-search" placeholder="Buscar tabla..." spellcheck="false">
+              </div>
+              <div class="qb-table-list" id="qbTableList"></div>
+            </aside>
+
+            <!-- Panel central: JOIN, columnas, filtros, orden + vista previa -->
+            <section class="qb-main">
+              <div class="qb-config">
+                <div class="qb-section" id="qbJoinsSection">
+                  <div class="qb-section-title">1 · Tablas y JOIN</div>
+                  <div id="qbJoins"></div>
+                </div>
+                <div class="qb-section">
+                  <div class="qb-section-title">2 · Columnas <span class="qb-muted">(SELECT)</span>
+                    <label class="check-inline qb-inline"><input type="checkbox" id="qbDistinct"> DISTINCT</label>
+                  </div>
+                  <div id="qbColumns"></div>
+                </div>
+                <div class="qb-section">
+                  <div class="qb-section-title">3 · Filtros <span class="qb-muted">(WHERE)</span>
+                    <button class="btn btn-small" id="qbAddFilter">+ Añadir filtro</button>
+                  </div>
+                  <div id="qbFilters"></div>
+                </div>
+                <div class="qb-section">
+                  <div class="qb-section-title">4 · Orden <span class="qb-muted">(ORDER BY)</span>
+                    <button class="btn btn-small" id="qbAddOrder">+ Añadir orden</button>
+                    <label class="qb-limit">LIMIT <input type="text" id="qbLimit" class="form-control" inputmode="numeric" placeholder="sin límite"></label>
+                  </div>
+                  <div id="qbOrders"></div>
+                </div>
+              </div>
+
+              <div class="qb-preview-dock">
+                <div class="qb-preview-head">
+                  <strong>Vista previa del SQL</strong>
+                  <span class="qb-muted" id="qbSummary"></span>
+                  <span class="qb-spacer"></span>
+                  <button class="btn btn-small" id="qbReset" title="Empezar de nuevo">Limpiar</button>
+                  <button class="btn btn-small" id="qbCopy">📋 Copiar</button>
+                  <button class="btn btn-primary qb-send" id="qbSend">➤ Enviar a Editor SQL</button>
+                </div>
+                <div class="qb-warnings" id="qbWarnings" hidden></div>
+                <pre class="qb-preview" id="qbPreview"></pre>
+              </div>
+            </section>
+          </div>
         </div>
 
         <!-- Barra de Estado Inferior -->
@@ -462,6 +526,8 @@
   <!-- Conversor de formatos (SheetJS se carga bajo demanda) -->
   <script src="js/data-converter.js"></script>
   <script src="js/converter-ui.js"></script>
+  <!-- Constructor visual de consultas -->
+  <script src="js/query-builder.js"></script>
 </body>
 
 </html>
