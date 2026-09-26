@@ -202,7 +202,7 @@ El sistema sigue una arquitectura cliente-servidor de tres capas:
    npm install
    ```
 
-3. **Configurar las variables de entorno.** Crear un archivo `.env` en la raíz del proyecto con el siguiente contenido:
+3. **Configurar las variables de entorno.** Copiar `.env.example` como `.env` en la raíz del proyecto y completar los valores:
 
    ```env
    PORT=3000
@@ -304,24 +304,29 @@ My-Best-DataBase/
 ## 13. Consideraciones de seguridad
 
 - Las contraseñas de los usuarios se almacenan cifradas con *bcrypt* (factor de costo 10).
-- La sesión se gestiona mediante *tokens* JWT con expiración de ocho horas.
+- La sesión se gestiona mediante *tokens* JWT con expiración de ocho horas, y **toda la API** (salvo el registro, el inicio de sesión y `/api/health`) exige un *token* válido.
+- La clave `JWT_SECRET` es obligatoria: en producción el servidor no arranca sin ella.
+- Límite de intentos en el inicio de sesión, el envío de códigos y el registro; código de verificación generado con `crypto` y máximo 5 intentos por código.
+- El inicio de sesión responde con un mensaje único (*"Correo o contraseña incorrectos"*) para no revelar qué correos están registrados.
+- La contraseña de MySQL se guarda solo durante la sesión del navegador (`sessionStorage`), nunca de forma permanente.
+- La API no acepta peticiones de otros orígenes (CORS cerrado) y envía cabeceras contra *clickjacking* y *MIME sniffing*.
 - Las operaciones destructivas se validan tanto en el cliente como en el servidor.
 - La edición desde la cuadrícula identifica cada fila por su llave primaria y se ejecuta de forma transaccional, lo que preserva la consistencia ante fallos o modificaciones concurrentes.
-- La interfaz escapa el contenido HTML al mostrar nombres y datos, a fin de prevenir inyección de código en la página.
+- La interfaz escapa el contenido HTML al mostrar nombres y datos (incluidos los nombres de bases de datos, tablas y columnas del árbol lateral y del diagrama ER), a fin de prevenir inyección de código en la página.
 
 ## 14. Limitaciones conocidas
 
 - Los usuarios de la aplicación se almacenan en un archivo JSON local, adecuado para un entorno académico pero no para un despliegue con múltiples usuarios concurrentes.
 - Los códigos de verificación se guardan en memoria, por lo que se pierden si el servidor se reinicia.
-- Los parámetros de conexión a MySQL se conservan en el almacenamiento local del navegador.
-- Si no se define `JWT_SECRET`, el sistema recurre a una clave predeterminada; en cualquier entorno distinto al de desarrollo debe configurarse explícitamente.
-- El sistema está diseñado para ejecutarse de forma local; su exposición a una red pública requeriría medidas adicionales (HTTPS, protección de rutas de la API mediante el *token*, limitación de peticiones).
+- Por seguridad, la contraseña de MySQL no se conserva al cerrar el navegador: el Studio la solicita de nuevo.
+- El limitador de intentos y los códigos de verificación viven en memoria y se reinician con el servidor.
+- El sistema está diseñado para ejecutarse de forma local; su exposición a una red pública requeriría medidas adicionales (HTTPS mediante un proxy inverso y `NODE_ENV=production`).
 
 ## 15. Trabajo futuro
 
 - **Consultas en lenguaje natural.** Integración de un modelo de inteligencia artificial que traduzca solicitudes expresadas en lenguaje natural a sentencias `SELECT`, las cuales se mostrarían al usuario para su revisión antes de ejecutarse.
 - Migración del registro de usuarios a una base de datos relacional.
-- Protección de todas las rutas de la API mediante verificación del *token* JWT.
+- Guardar la conexión a MySQL del lado del servidor, asociada a la sesión.
 - Empaquetado como aplicación de escritorio.
 - Exportación del diagrama Entidad-Relación como imagen.
 

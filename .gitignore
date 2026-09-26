@@ -1,2 +1,7 @@
 node_modules/
+
+# Secretos y configuración local
 .env
+
+# Cuentas de usuario de la aplicación (correos y contraseñas cifradas)
+data/users.json

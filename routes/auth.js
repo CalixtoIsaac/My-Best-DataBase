@@ -3,13 +3,31 @@ const nodemailer = require('nodemailer');
 const fs = require('fs');
 const path = require('path');
 const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
+const { signToken, rateLimit } = require('../lib/security');
 
 const router = express.Router();
 const USERS_FILE = path.join(__dirname, '../data/users.json');
 
-// Mapa RAM para almacenamiento OTP
+// Mapa RAM para almacenamiento OTP: correo -> { code, expiresAt, attempts }
 const otpStore = new Map();
+
+const MIN_PASSWORD_LENGTH = 8;
+const MAX_OTP_ATTEMPTS = 5;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Hash de relleno: si el correo no existe se compara contra él, para que la
+// respuesta tarde lo mismo y no delate qué correos están registrados.
+const DUMMY_HASH = bcrypt.hashSync(crypto.randomBytes(16).toString('hex'), 10);
+
+// Límites de intentos (ventana de 15 minutos) contra fuerza bruta y abuso del correo
+const WINDOW_15_MIN = 15 * 60 * 1000;
+const emailKey = (req) => String((req.body && req.body.email) || '').toLowerCase().trim();
+const sendCodeByIp = rateLimit({ windowMs: WINDOW_15_MIN, max: 5, message: 'Se solicitaron demasiados códigos desde este equipo. Espera 15 minutos.' });
+const sendCodeByEmail = rateLimit({ windowMs: WINDOW_15_MIN, max: 3, key: emailKey, message: 'Ya se enviaron varios códigos a este correo. Espera unos minutos antes de pedir otro.' });
+const registerByIp = rateLimit({ windowMs: WINDOW_15_MIN, max: 10 });
+const loginByIp = rateLimit({ windowMs: WINDOW_15_MIN, max: 20 });
+const loginByEmail = rateLimit({ windowMs: WINDOW_15_MIN, max: 8, key: emailKey });
 
 function getUsers() {
   if (!fs.existsSync(USERS_FILE)) {
@@ -35,22 +53,26 @@ const transporter = nodemailer.createTransport({
 });
 
 // 1. SOLICITAR CÓDIGO
-router.post('/send-code', async (req, res) => {
+router.post('/send-code', sendCodeByIp, sendCodeByEmail, async (req, res) => {
   try {
     const { email } = req.body;
     if (!email) return res.status(400).json({ error: 'El correo es obligatorio.' });
 
     const cleanEmail = String(email).toLowerCase().trim();
+    if (!EMAIL_RE.test(cleanEmail) || cleanEmail.length > 254) {
+      return res.status(400).json({ error: 'El correo electrónico no es válido.' });
+    }
     const users = getUsers();
 
     if (users.some(u => u.email === cleanEmail)) {
       return res.status(400).json({ error: 'Este correo electrónico ya está registrado.' });
     }
 
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    // Generador criptográficamente seguro (Math.random() es predecible)
+    const code = crypto.randomInt(100000, 1000000).toString();
     const expiresAt = Date.now() + 10 * 60 * 1000;
 
-    otpStore.set(cleanEmail, { code, expiresAt });
+    otpStore.set(cleanEmail, { code, expiresAt, attempts: 0 });
 
     const mailOptions = {
       from: `"My Best DataBase" <${process.env.EMAIL_USER}>`,
@@ -79,13 +101,17 @@ router.post('/send-code', async (req, res) => {
 });
 
 // 2. VERIFICAR CÓDIGO Y REGISTRAR
-router.post('/register', async (req, res) => {
+router.post('/register', registerByIp, async (req, res) => {
   try {
     const { name, email, password, code } = req.body;
 
     // Control de existencia de campos
     if (!name || !email || !password || !code) {
       return res.status(400).json({ error: 'Faltan datos obligatorios para el registro. Regresa al paso 1.' });
+    }
+
+    if (String(password).length < MIN_PASSWORD_LENGTH) {
+      return res.status(400).json({ error: `La contraseña debe tener al menos ${MIN_PASSWORD_LENGTH} caracteres.` });
     }
 
     const cleanEmail = String(email).toLowerCase().trim();
@@ -102,7 +128,14 @@ router.post('/register', async (req, res) => {
     }
 
     if (String(record.code).trim() !== cleanCode) {
-      return res.status(400).json({ error: 'El código de verificación es incorrecto.' });
+      // Máximo de intentos por código: evita adivinarlo por fuerza bruta
+      record.attempts = (record.attempts || 0) + 1;
+      if (record.attempts >= MAX_OTP_ATTEMPTS) {
+        otpStore.delete(cleanEmail);
+        return res.status(400).json({ error: 'Demasiados intentos fallidos. Solicita un código nuevo.' });
+      }
+      const left = MAX_OTP_ATTEMPTS - record.attempts;
+      return res.status(400).json({ error: `El código de verificación es incorrecto. Te quedan ${left} intento(s).` });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -134,7 +167,7 @@ router.post('/register', async (req, res) => {
 });
 
 // 3. INICIAR SESIÓN
-router.post('/login', async (req, res) => {
+router.post('/login', loginByIp, loginByEmail, async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
@@ -145,20 +178,14 @@ router.post('/login', async (req, res) => {
     const users = getUsers();
     const user = users.find(u => u.email === cleanEmail);
 
-    if (!user) {
-      return res.status(400).json({ error: 'El correo electrónico no está registrado.' });
+    // Siempre se ejecuta bcrypt (aunque el correo no exista) y el mensaje es el mismo:
+    // así no se puede averiguar qué correos están registrados.
+    const isMatch = await bcrypt.compare(String(password), user ? user.password : DUMMY_HASH);
+    if (!user || !isMatch) {
+      return res.status(401).json({ error: 'Correo o contraseña incorrectos.' });
     }
 
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res.status(400).json({ error: 'Contraseña incorrecta.' });
-    }
-
-    const token = jwt.sign(
-      { id: user.id, email: user.email, name: user.name },
-      process.env.JWT_SECRET || 'secreto_super_seguro',
-      { expiresIn: '8h' }
-    );
+    const token = signToken({ id: user.id, email: user.email, name: user.name });
 
     return res.json({
       token,

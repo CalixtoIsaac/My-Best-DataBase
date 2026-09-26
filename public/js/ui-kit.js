@@ -8,8 +8,15 @@
  *  - UI.alert()       → ventana informativa.
  *  - UI.toast()       → notificación pequeña en la esquina.
  *  - UI.download()    → descarga un archivo generado en el navegador.
- *  - UI.api()         → llamada POST a la API con la conexión activa.
- *  - UI.getConnection() / UI.highlightSql()
+ *  - UI.api()         → llamada a la API con la conexión activa y el token de sesión.
+ *  - UI.apiFetch()    → fetch() que agrega el token y redirige al login si la sesión expiró.
+ *  - UI.getConnection() / UI.setConnection() / UI.needsPassword()
+ *  - UI.jsArg()       → texto seguro como argumento de un onclick="..." en HTML.
+ *  - UI.highlightSql()
+ *
+ * Seguridad de la conexión: host, puerto, usuario y base de datos se guardan en
+ * localStorage, pero la CONTRASEÑA de MySQL solo en sessionStorage (se borra al
+ * cerrar la pestaña o el navegador y nunca se escribe en disco de forma permanente).
  */
 const UI = (() => {
 
@@ -22,25 +29,122 @@ const UI = (() => {
       .replace(/'/g, '&#39;');
   }
 
-  /** Devuelve la conexión guardada en localStorage (o null) */
-  function getConnection() {
+  /**
+   * Convierte un texto en un argumento seguro para un manejador en línea:
+   *   onclick="abrir(${UI.jsArg(nombre)})"
+   * JSON.stringify produce un literal JS válido (escapa comillas y "\") y escape()
+   * lo protege dentro del atributo HTML. Así un nombre como  x'); alert(1); ('
+   * no puede romper el código.
+   */
+  function jsArg(value) {
+    return escape(JSON.stringify(String(value === null || value === undefined ? '' : value)));
+  }
+
+  // ------------------------------------------------------------------
+  // Conexión activa: datos en localStorage, contraseña en sessionStorage
+  // ------------------------------------------------------------------
+  const CONNECTION_KEY = 'activeDbConnection';
+  const PASSWORD_KEY = 'mbdb.dbPassword';
+
+  function readStored() {
     try {
-      const raw = localStorage.getItem('activeDbConnection');
-      return raw ? JSON.parse(raw) : null;
+      const raw = localStorage.getItem(CONNECTION_KEY);
+      const cfg = raw ? JSON.parse(raw) : null;
+      if (!cfg || typeof cfg !== 'object') return null;
+      // Migración: versiones anteriores guardaban la contraseña en localStorage
+      if (Object.prototype.hasOwnProperty.call(cfg, 'password')) {
+        const pwd = cfg.password;
+        delete cfg.password;
+        cfg.hasPassword = !!pwd;
+        if (pwd) sessionStorage.setItem(PASSWORD_KEY, pwd);
+        localStorage.setItem(CONNECTION_KEY, JSON.stringify(cfg));
+      }
+      return cfg;
     } catch (e) {
       return null;
     }
+  }
+
+  /** Conexión activa lista para enviarse a la API: { host, port, user, password, database } o null */
+  function getConnection() {
+    const cfg = readStored();
+    if (!cfg) return null;
+    let password = '';
+    try { password = sessionStorage.getItem(PASSWORD_KEY) || ''; } catch (e) { /* sin sessionStorage */ }
+    const { hasPassword, ...rest } = cfg;
+    return { ...rest, password };
+  }
+
+  /** Guarda la conexión separando la contraseña (solo en sessionStorage) */
+  function setConnection(config) {
+    if (!config) {
+      try { localStorage.removeItem(CONNECTION_KEY); sessionStorage.removeItem(PASSWORD_KEY); } catch (e) { /* nada */ }
+      return;
+    }
+    const { password, hasPassword, ...rest } = config;
+    try {
+      if (password) sessionStorage.setItem(PASSWORD_KEY, password);
+      else sessionStorage.removeItem(PASSWORD_KEY);
+      localStorage.setItem(CONNECTION_KEY, JSON.stringify({ ...rest, hasPassword: !!password }));
+    } catch (e) { /* almacenamiento no disponible */ }
+  }
+
+  /** true si la conexión usa contraseña pero ya no está en esta sesión del navegador */
+  function needsPassword() {
+    const cfg = readStored();
+    if (!cfg || !cfg.hasPassword) return false;
+    try { return !sessionStorage.getItem(PASSWORD_KEY); } catch (e) { return true; }
+  }
+
+  // ------------------------------------------------------------------
+  // Sesión de la aplicación (token JWT)
+  // ------------------------------------------------------------------
+  let redirectingToLogin = false;
+
+  /** Cierra la sesión local y vuelve al login mostrando el motivo */
+  function sessionExpired(message) {
+    if (redirectingToLogin) return;
+    redirectingToLogin = true;
+    try {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      sessionStorage.removeItem(PASSWORD_KEY);
+      sessionStorage.setItem('mbdb.authMessage', message || 'Tu sesión expiró. Inicia sesión de nuevo.');
+    } catch (e) { /* nada */ }
+    window.location.href = '/login';
+  }
+
+  /**
+   * fetch() hacia la API con el token de sesión. Si el servidor responde 401
+   * (sin sesión, token inválido o expirado) redirige al login.
+   */
+  async function apiFetch(url, options = {}) {
+    const headers = Object.assign({}, options.headers);
+    let token = null;
+    try { token = localStorage.getItem('token'); } catch (e) { /* nada */ }
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const res = await fetch(url, { ...options, headers });
+    if (res.status === 401) {
+      let data = {};
+      try { data = await res.clone().json(); } catch (e) { /* sin JSON */ }
+      if (data.code === 'AUTH_REQUIRED') {
+        sessionExpired(data.error);
+        throw new Error(data.error || 'Tu sesión expiró. Inicia sesión de nuevo.');
+      }
+    }
+    return res;
   }
 
   /**
    * POST a la API agregando automáticamente la configuración de conexión.
    * Lanza un Error con el mensaje del servidor si la respuesta no es 2xx.
    */
-  async function api(path, body = {}, { raw = false } = {}) {
+  async function api(path, body = {}, { raw = false, method = 'POST' } = {}) {
     const connectionConfig = getConnection();
     if (!connectionConfig) throw new Error('No hay un servidor conectado. Usa "+ Conectar Servidor".');
-    const res = await fetch('/api' + path, {
-      method: 'POST',
+    if (needsPassword()) throw new Error('Vuelve a escribir la contraseña de MySQL en "+ Conectar Servidor".');
+    const res = await apiFetch('/api' + path, {
+      method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ connectionConfig, ...body })
     });
@@ -213,5 +317,8 @@ const UI = (() => {
     return (bytes / 1024 / 1024).toFixed(1) + ' MB';
   }
 
-  return { escape, getConnection, api, highlightSql, confirm, alert, toast, download, stamp, formatBytes };
+  return {
+    escape, jsArg, getConnection, setConnection, needsPassword, apiFetch, sessionExpired,
+    api, highlightSql, confirm, alert, toast, download, stamp, formatBytes
+  };
 })();

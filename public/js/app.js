@@ -299,7 +299,7 @@ function renderAutocompleteItems() {
   autocompleteMatches.forEach((item, idx) => {
     const isSelected = idx === autocompleteSelectedIndex ? 'selected' : '';
     html += `
-      <div class="autocomplete-item ${isSelected}" onclick="applyAutocompleteSuggestion('${item.text}')">
+      <div class="autocomplete-item ${isSelected}" onclick="applyAutocompleteSuggestion(${UI.jsArg(item.text)})">
         <span><strong>${item.text}</strong></span>
         <span class="autocomplete-tag">${item.type}</span>
       </div>
@@ -370,7 +370,6 @@ function applyAutocompleteSuggestion(suggestedWord) {
  *                                   Si no hay selección, avisa al usuario o ejecuta la línea actual.
  */
 async function runScriptQuery(onlySelection = false) {
-  const token = localStorage.getItem('token');
   const editor = document.getElementById('sqlEditor');
   if (!editor) return;
 
@@ -411,6 +410,13 @@ async function runScriptQuery(onlySelection = false) {
     return;
   }
 
+  // La contraseña de MySQL solo dura mientras la pestaña está abierta: si falta, se pide de nuevo
+  if (UI.needsPassword()) {
+    logConsole('Vuelve a escribir la contraseña de MySQL para ejecutar consultas.', 'error');
+    openConnectionModal();
+    return;
+  }
+
   logConsole(`${executionLabel}:\n${sql}`, 'info');
 
   // Pestañas: el resultado se guarda en la pestaña que lanzó la consulta (editor-tabs.js)
@@ -420,17 +426,13 @@ async function runScriptQuery(onlySelection = false) {
   try {
     const startTime = performance.now();
 
-    // Obtener la configuración de conexión activa si existe
-    const activeConnection = localStorage.getItem('activeDbConnection');
-    const connectionConfig = activeConnection ? JSON.parse(activeConnection) : null;
+    // Configuración de conexión activa (la contraseña vive solo en sessionStorage)
+    const connectionConfig = UI.getConnection();
 
-    // Petición asíncrona enviada a la API REST del backend
-    const res = await fetch('/api/query', {
+    // Petición asíncrona a la API REST (UI.apiFetch agrega el token de sesión JWT)
+    const res = await UI.apiFetch('/api/query', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sql, connectionConfig })
     });
 
@@ -636,8 +638,8 @@ async function loadDatabasesTree() {
   const treeView = document.getElementById('treeView');
   if (!treeView) return;
 
-  const activeConnection = localStorage.getItem('activeDbConnection');
-  if (!activeConnection) {
+  const config = UI.getConnection();
+  if (!config) {
     treeView.innerHTML = `
       <div style="padding: 16px 10px; font-size: 11px; color: var(--text-muted); text-align: center; line-height: 1.5;">
         Sin conexiones activas.<br><br>
@@ -647,7 +649,17 @@ async function loadDatabasesTree() {
     return;
   }
 
-  const config = JSON.parse(activeConnection);
+  // Por seguridad la contraseña de MySQL no sobrevive al cierre del navegador: se pide de nuevo
+  if (UI.needsPassword()) {
+    treeView.innerHTML = `
+      <div style="padding: 16px 10px; font-size: 11px; color: var(--text-muted); text-align: center; line-height: 1.5;">
+        Por seguridad, la contraseña de MySQL no se conserva al cerrar el navegador.<br><br>
+        <button class="btn btn-small" type="button" onclick="openConnectionModal()">🔑 Escribir contraseña</button>
+      </div>
+    `;
+    openConnectionModal();
+    return;
+  }
 
   // Actualizar estado del footer
   const footerStatus = document.querySelector('.status-bar span:first-child');
@@ -662,7 +674,7 @@ async function loadDatabasesTree() {
   `;
 
   try {
-    const res = await fetch('/api/databases', {
+    const res = await UI.apiFetch('/api/databases', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ connectionConfig: config })
@@ -674,7 +686,7 @@ async function loadDatabasesTree() {
       treeView.innerHTML = `
         <div style="padding: 12px 10px; font-size: 11px; color: var(--error-text); line-height: 1.4;">
           Error al obtener esquemas:<br>
-          <span style="font-size: 10px;">${data.error || 'Fallo de conexión'}</span>
+          <span style="font-size: 10px;">${UI.escape(data.error || 'Fallo de conexión')}</span>
         </div>
       `;
       return;
@@ -707,8 +719,8 @@ function renderDatabasesTree(databases) {
     return;
   }
 
-  const activeConnection = localStorage.getItem('activeDbConnection');
-  const currentDb = activeConnection ? JSON.parse(activeConnection).database : null;
+  const activeConnection = UI.getConnection();
+  const currentDb = activeConnection ? activeConnection.database : null;
 
   let html = `<div style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); padding: 4px 6px 8px 6px; font-weight: bold;">
     ESQUEMAS (${databases.length})
@@ -718,23 +730,27 @@ function renderDatabasesTree(databases) {
     const isSelected = currentDb && currentDb.toLowerCase() === db.toLowerCase();
     // Las bases de datos del sistema se muestran con candado y sin acciones destructivas
     const isSystem = typeof SqlUtils !== 'undefined' && SqlUtils.isSystemSchema(db);
+    // Los nombres vienen del servidor MySQL y pueden contener cualquier carácter:
+    // dbText es seguro para HTML y dbArg para usarse dentro de onclick="...".
+    const dbText = UI.escape(db);
+    const dbArg = UI.jsArg(db);
     const actions = isSystem
       ? `<span class="db-lock" title="Base de datos del sistema: protegida contra cambios">🔒</span>`
-      : `<button class="db-action-button" type="button" title="Nueva tabla en ${db}"
-            onclick="event.stopPropagation(); Designer.openCreateTable('${db}')">➕</button>
-          <button class="db-action-button" type="button" title="Respaldar ${db}"
-            onclick="event.stopPropagation(); Backup.open('backup', '${db}')">💾</button>
-          <button class="db-delete-button" type="button" title="Eliminar base de datos" aria-label="Eliminar ${db}"
-            onclick="event.stopPropagation(); deleteDatabase('${db}')">🗑️</button>`;
+      : `<button class="db-action-button" type="button" title="Nueva tabla en ${dbText}"
+            onclick="event.stopPropagation(); Designer.openCreateTable(${dbArg})">➕</button>
+          <button class="db-action-button" type="button" title="Respaldar ${dbText}"
+            onclick="event.stopPropagation(); Backup.open('backup', ${dbArg})">💾</button>
+          <button class="db-delete-button" type="button" title="Eliminar base de datos" aria-label="Eliminar ${dbText}"
+            onclick="event.stopPropagation(); deleteDatabase(${dbArg})">🗑️</button>`;
     html += `
-      <div class="db-tree-item" id="db-item-${db}">
-        <div class="db-node-header ${isSelected ? 'active' : ''} ${isSystem ? 'system-db' : ''}" onclick="toggleDatabaseNode('${db}')">
-          <span class="db-node-arrow" id="arrow-${db}">▶</span>
+      <div class="db-tree-item" id="db-item-${dbText}">
+        <div class="db-node-header ${isSelected ? 'active' : ''} ${isSystem ? 'system-db' : ''}" onclick="toggleDatabaseNode(${dbArg})">
+          <span class="db-node-arrow" id="arrow-${dbText}">▶</span>
           <span class="db-node-icon">${isSystem ? '⚙️' : '🗄️'}</span>
-          <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${db}">${db}</span>
+          <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${dbText}">${dbText}</span>
           ${actions}
         </div>
-        <div class="db-tables-list" id="tables-list-${db}"></div>
+        <div class="db-tables-list" id="tables-list-${dbText}"></div>
       </div>
     `;
   });
@@ -751,12 +767,11 @@ async function deleteDatabase(dbName) {
   const confirmed = await SafetyGuard.confirmDropDatabase(dbName);
   if (!confirmed) return;
 
-  const activeConnection = localStorage.getItem('activeDbConnection');
-  if (!activeConnection) return;
+  const config = UI.getConnection();
+  if (!config) return;
 
-  const config = JSON.parse(activeConnection);
   try {
-    const res = await fetch('/api/databases', {
+    const res = await UI.apiFetch('/api/databases', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ connectionConfig: config, database: dbName })
@@ -770,7 +785,7 @@ async function deleteDatabase(dbName) {
 
     if (config.database && config.database.toLowerCase() === dbName.toLowerCase()) {
       delete config.database;
-      localStorage.setItem('activeDbConnection', JSON.stringify(config));
+      UI.setConnection(config);
     }
 
     logConsole(`Base de datos eliminada: ${dbName}`, 'success');
@@ -839,12 +854,11 @@ async function toggleDatabaseNode(dbName) {
 
   tablesContainer.innerHTML = `<div style="padding: 4px 8px; font-size: 11px; color: var(--text-muted);">⏳ Cargando tablas...</div>`;
 
-  const activeConnection = localStorage.getItem('activeDbConnection');
-  if (!activeConnection) return;
-  const config = JSON.parse(activeConnection);
+  const config = UI.getConnection();
+  if (!config) return;
 
   try {
-    const res = await fetch('/api/tables', {
+    const res = await UI.apiFetch('/api/tables', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ connectionConfig: config, database: dbName })
@@ -862,7 +876,7 @@ async function toggleDatabaseNode(dbName) {
 
     const isSystem = SqlUtils.isSystemSchema(dbName);
     const newTableLink = isSystem ? '' : `
-      <div class="table-node-item table-node-new" onclick="Designer.openCreateTable('${dbName}')" title="Crear una tabla con el diseñador visual">
+      <div class="table-node-item table-node-new" onclick="Designer.openCreateTable(${UI.jsArg(dbName)})" title="Crear una tabla con el diseñador visual">
         <span style="font-size: 11px;">➕</span><span>Nueva tabla...</span>
       </div>`;
 
@@ -872,16 +886,18 @@ async function toggleDatabaseNode(dbName) {
     }
 
     let tablesHtml = '';
+    const dbArg = UI.jsArg(dbName);
     tables.forEach(table => {
+      const tableArg = UI.jsArg(table);
       const tableActions = isSystem ? '' : `
           <button class="table-action-button" type="button" title="Modificar estructura (diseñador)"
-            onclick="event.stopPropagation(); Designer.openEditTable('${dbName}', '${table}')">✏️</button>
+            onclick="event.stopPropagation(); Designer.openEditTable(${dbArg}, ${tableArg})">✏️</button>
           <button class="table-action-button danger" type="button" title="Eliminar tabla"
-            onclick="event.stopPropagation(); deleteTable('${dbName}', '${table}')">🗑️</button>`;
+            onclick="event.stopPropagation(); deleteTable(${dbArg}, ${tableArg})">🗑️</button>`;
       tablesHtml += `
-        <div class="table-node-item" onclick="pasteSelectTable('${dbName}', '${table}')" title="Clic para consultar">
+        <div class="table-node-item" onclick="pasteSelectTable(${dbArg}, ${tableArg})" title="Clic para consultar">
           <span style="font-size: 11px;">📋</span>
-          <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${table}</span>
+          <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${UI.escape(table)}</span>
           ${tableActions}
         </div>
       `;
@@ -897,16 +913,16 @@ async function toggleDatabaseNode(dbName) {
  * Asigna la base de datos seleccionada como la activa para futuras consultas.
  */
 function setWorkingDatabase(dbName) {
-  const activeConnection = localStorage.getItem('activeDbConnection');
-  if (!activeConnection) return;
-
-  const config = JSON.parse(activeConnection);
+  const config = UI.getConnection();
+  if (!config) return;
   config.database = dbName;
-  localStorage.setItem('activeDbConnection', JSON.stringify(config));
+  UI.setConnection(config);
 
   // Actualizar estilo visual activo en el sidebar
+  // (getElementById en lugar de querySelector: el nombre puede tener caracteres especiales)
   document.querySelectorAll('.db-node-header').forEach(el => el.classList.remove('active'));
-  const activeNode = document.querySelector(`#db-item-${dbName} .db-node-header`);
+  const dbItem = document.getElementById(`db-item-${dbName}`);
+  const activeNode = dbItem ? dbItem.querySelector('.db-node-header') : null;
   if (activeNode) activeNode.classList.add('active');
 
   // Actualizar barra de estado
@@ -937,7 +953,9 @@ function filterSchemas(text) {
  * al hacer doble clic o seleccionar una tabla de la lista lateral.
  */
 function pasteSelectTable(schema, table) {
-  const sql = `SELECT * FROM ${schema}.${table} LIMIT 100;`;
+  // Nombres simples tal cual; cualquier otro nombre va entre `backticks` (escapados)
+  const ident = (name) => (/^[A-Za-z_][A-Za-z0-9_$]*$/.test(name) ? name : DDLBuilder.q(name));
+  const sql = `SELECT * FROM ${ident(schema)}.${ident(table)} LIMIT 100;`;
   // Con pestañas: se abre en una pestaña nueva si la actual ya tiene un script escrito
   if (typeof EditorTabs !== 'undefined') {
     EditorTabs.openWithSql(sql, table);
@@ -982,7 +1000,17 @@ function closeModal() {
  * Muestra el modal para configurar una nueva conexión a la base de datos.
  */
 function openConnectionModal() {
+  // Precarga la conexión guardada; si la contraseña ya no está en esta sesión, enfoca ese campo
+  const saved = UI.getConnection();
+  if (saved) {
+    document.getElementById('connHost').value = saved.host || '';
+    document.getElementById('connPort').value = saved.port || 3306;
+    document.getElementById('connUser').value = saved.user || '';
+    document.getElementById('connPassword').value = saved.password || '';
+    document.getElementById('connDatabase').value = saved.database || '';
+  }
   document.getElementById('connectionModal').style.display = 'flex';
+  if (UI.needsPassword()) document.getElementById('connPassword').focus();
 }
 
 /**
@@ -993,7 +1021,8 @@ function closeConnectionModal() {
 }
 
 /**
- * Guarda los detalles de la conexión en localStorage y actualiza la UI.
+ * Guarda los detalles de la conexión y actualiza la UI.
+ * Host, puerto, usuario y BD van a localStorage; la contraseña solo a sessionStorage (UI.setConnection).
  */
 function saveConnection() {
   const host = document.getElementById('connHost').value.trim();
@@ -1015,7 +1044,7 @@ function saveConnection() {
     database: database || undefined
   };
 
-  localStorage.setItem('activeDbConnection', JSON.stringify(connectionConfig));
+  UI.setConnection(connectionConfig);
 
   closeConnectionModal();
   refreshSidebar();
@@ -1031,8 +1060,8 @@ async function renderERDiagram() {
   const badge = document.getElementById('erInfoBadge');
   if (!canvas) return;
 
-  const activeConnection = localStorage.getItem('activeDbConnection');
-  if (!activeConnection) {
+  const config = UI.getConnection();
+  if (!config) {
     canvas.innerHTML = `
       <div class="er-empty-state">
         <div style="font-size: 32px; margin-bottom: 12px;">📊</div>
@@ -1044,15 +1073,13 @@ async function renderERDiagram() {
     return;
   }
 
-  const config = JSON.parse(activeConnection);
-
   // Poblar el selector de bases de datos si está vacío o desactualizado
   if (select && currentDatabasesList.length > 0) {
     const currentVal = select.value || config.database || '';
     let optionsHtml = '<option value="">Selecciona una base de datos...</option>';
     currentDatabasesList.forEach(db => {
       const selected = (db.toLowerCase() === currentVal.toLowerCase()) ? 'selected' : '';
-      optionsHtml += `<option value="${db}" ${selected}>${db}</option>`;
+      optionsHtml += `<option value="${UI.escape(db)}" ${selected}>${UI.escape(db)}</option>`;
     });
     select.innerHTML = optionsHtml;
   }
@@ -1074,12 +1101,12 @@ async function renderERDiagram() {
   canvas.innerHTML = `
     <div class="er-empty-state">
       <div style="font-size: 28px; margin-bottom: 10px;">⏳</div>
-      <p style="font-size: 12px;">Analizando tablas, columnas y relaciones foráneas de <strong>${targetDb}</strong>...</p>
+      <p style="font-size: 12px;">Analizando tablas, columnas y relaciones foráneas de <strong>${UI.escape(targetDb)}</strong>...</p>
     </div>
   `;
 
   try {
-    const res = await fetch('/api/schema', {
+    const res = await UI.apiFetch('/api/schema', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ connectionConfig: config, database: targetDb })
@@ -1091,7 +1118,7 @@ async function renderERDiagram() {
       canvas.innerHTML = `
         <div class="er-empty-state">
           <h4 style="color: var(--error-text); margin-bottom: 6px;">Error al generar diagrama</h4>
-          <p style="font-size: 11px;">${data.error || 'No se pudo cargar el esquema'}</p>
+          <p style="font-size: 11px;">${UI.escape(data.error || 'No se pudo cargar el esquema')}</p>
         </div>
       `;
       if (badge) badge.innerText = '';
@@ -1105,7 +1132,7 @@ async function renderERDiagram() {
         <div class="er-empty-state">
           <div style="font-size: 32px; margin-bottom: 12px;">📂</div>
           <h3 style="color: var(--text-main); margin-bottom: 8px;">Base de datos vacía</h3>
-          <p style="font-size: 12px;">La base de datos <strong>${targetDb}</strong> aún no contiene tablas.</p>
+          <p style="font-size: 12px;">La base de datos <strong>${UI.escape(targetDb)}</strong> aún no contiene tablas.</p>
         </div>
       `;
       if (badge) badge.innerText = '0 tablas';
@@ -1119,15 +1146,16 @@ async function renderERDiagram() {
     // Renderizar tarjetas de tablas
     let html = `<div class="er-grid-container">`;
 
+    // Los nombres de tablas y columnas se escapan: MySQL permite casi cualquier carácter en ellos
     tables.forEach(table => {
       html += `
         <div class="er-table-card">
           <div class="er-table-header">
-            <span>📋 ${table.name}</span>
+            <span>📋 ${UI.escape(table.name)}</span>
             <span style="display: flex; align-items: center; gap: 6px;">
               <span style="font-size: 10px; opacity: 0.7; font-weight: normal;">${table.columns.length} cols</span>
               ${SqlUtils.isSystemSchema(targetDb) ? '' : `<button class="er-edit-button" type="button" title="Modificar estructura"
-                onclick="Designer.openEditTable('${targetDb}', '${table.name}')">✏️</button>`}
+                onclick="Designer.openEditTable(${UI.jsArg(targetDb)}, ${UI.jsArg(table.name)})">✏️</button>`}
             </span>
           </div>
           <div class="er-columns-list">
@@ -1145,9 +1173,9 @@ async function renderERDiagram() {
           <div class="er-column-row">
             <div class="er-col-info">
               ${badgeHtml}
-              <span class="er-col-name" title="${col.name}">${col.name}</span>
+              <span class="er-col-name" title="${UI.escape(col.name)}">${UI.escape(col.name)}</span>
             </div>
-            <span class="er-col-type" title="${col.type}">${col.type}</span>
+            <span class="er-col-type" title="${UI.escape(col.type)}">${UI.escape(col.type)}</span>
           </div>
         `;
       });
@@ -1173,9 +1201,9 @@ async function renderERDiagram() {
       relations.forEach(rel => {
         html += `
           <div class="er-relation-tag">
-            <strong style="color: var(--accent-text);">${rel.fromTable}</strong>.${rel.fromColumn}
+            <strong style="color: var(--accent-text);">${UI.escape(rel.fromTable)}</strong>.${UI.escape(rel.fromColumn)}
             <span>➔</span>
-            <strong style="color: var(--success-text);">${rel.toTable}</strong>.${rel.toColumn}
+            <strong style="color: var(--success-text);">${UI.escape(rel.toTable)}</strong>.${UI.escape(rel.toColumn)}
           </div>
         `;
       });

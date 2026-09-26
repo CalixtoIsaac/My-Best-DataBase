@@ -3,8 +3,23 @@ let pendingRegisterData = {};
 
 document.addEventListener('DOMContentLoaded', () => {
   checkActiveSession();
+  showPendingAuthMessage();
   initProBackground();
 });
+
+/**
+ * Si el Studio cerró la sesión (token expirado o inválido), muestra el motivo en el login.
+ */
+function showPendingAuthMessage() {
+  if (!document.getElementById('authAlert')) return;
+  try {
+    const message = sessionStorage.getItem('mbdb.authMessage');
+    if (message) {
+      sessionStorage.removeItem('mbdb.authMessage');
+      showAlert(message, 'error');
+    }
+  } catch (e) { /* sessionStorage no disponible */ }
+}
 
 // ==========================================
 // CONTROL DE SESIÓN Y NAVEGACIÓN ENTRE PÁGINAS
@@ -96,6 +111,11 @@ async function handleSendCode(e) {
 
   if (password !== confirmPassword) {
     showAlert('Las contraseñas no coinciden. Por favor verifícalas.');
+    return;
+  }
+
+  if (password.length < 8) {
+    showAlert('La contraseña debe tener al menos 8 caracteres.');
     return;
   }
 
@@ -211,6 +231,8 @@ async function handleLogin(e) {
 function handleLogout() {
   localStorage.removeItem('token');
   localStorage.removeItem('user');
+  // La contraseña de MySQL (sessionStorage) también se olvida al cerrar sesión
+  try { sessionStorage.removeItem('mbdb.dbPassword'); } catch (e) { /* nada */ }
   window.location.href = '/login';
 }
 

@@ -4,6 +4,7 @@ const cors = require('cors');
 const path = require('path');
 const authRoutes = require('./routes/auth');
 const toolsRoutes = require('./routes/tools');        // Diseñador visual, respaldo y restauración
+const { requireAuth } = require('./lib/security');   // Verificación del token JWT
 const SqlUtils = require('./public/js/sql-utils');    // Análisis de sentencias (compartido con el navegador)
 const { Types: MYSQL_TYPES } = require('mysql2');
 
@@ -40,7 +41,25 @@ const PORT = process.env.PORT || 3000;
 // ==========================================
 // MIDDLEWARES DE LA APLICACIÓN
 // ==========================================
-app.use(cors());
+app.disable('x-powered-by');
+
+// Cabeceras de seguridad básicas: evitan que el navegador "adivine" tipos de archivo
+// y que el Studio se incruste dentro de otra página (clickjacking).
+app.use((req, res, next) => {
+  res.set({
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'same-origin'
+  });
+  next();
+});
+
+// CORS: la interfaz se sirve desde este mismo servidor, así que la API NO se abre a
+// otros orígenes. Si hiciera falta, se listan en CORS_ORIGIN (separados por coma).
+const allowedOrigins = String(process.env.CORS_ORIGIN || '').split(',').map(s => s.trim()).filter(Boolean);
+if (allowedOrigins.length) {
+  app.use(cors({ origin: allowedOrigins }));
+}
 // Límite de 60 MB para poder restaurar archivos .sql grandes
 app.use(express.json({ limit: '60mb' }));
 app.use(express.urlencoded({ extended: true, limit: '60mb' }));
@@ -56,6 +75,10 @@ app.use('/vendor/xlsx', express.static(path.join(__dirname, 'node_modules', 'xls
 // RUTAS DE LA API
 // ==========================================
 app.use('/api/auth', authRoutes);
+
+// A partir de aquí, toda la API exige una sesión válida (token JWT), excepto /api/health.
+app.use('/api', (req, res, next) => (req.path === '/health' ? next() : requireAuth(req, res, next)));
+
 app.use('/api', toolsRoutes);
 
 app.get('/api/health', (req, res) => {
