@@ -11,6 +11,13 @@
 ![Versión](https://img.shields.io/badge/versión-1.0.0-blue)
 
 ---
+Capturas del programa
+<img width="1919" height="953" alt="image" src="https://github.com/user-attachments/assets/b95f427d-5c30-48ff-a2a1-71b125b9d36b" />
+<img width="1919" height="951" alt="image" src="https://github.com/user-attachments/assets/0d7cea6a-cda5-41d1-8a75-c4e96877d7be" />
+<img width="1919" height="950" alt="image" src="https://github.com/user-attachments/assets/1403311c-15dc-42b4-9350-dc0efdefed65" />
+<img width="454" height="487" alt="image" src="https://github.com/user-attachments/assets/ab0d1449-be5c-4c96-8bbd-7ed604f2e917" />
+
+---
 
 ## Tabla de contenido
 
