@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="css/features.css">
   <link rel="stylesheet" href="css/converter.css">
   <link rel="stylesheet" href="css/query-builder.css">
+  <link rel="stylesheet" href="css/panel-resizer.css">
 </head>
 
 <body>
@@ -92,6 +93,11 @@
               <div id="autocompleteBox" class="autocomplete-dropdown" style="display: none;"></div>
             </div>
           </div>
+
+          <!-- Divisor arrastrable editor / resultados (panel-resizer.js) -->
+          <div class="pane-splitter" id="resultsSplitter" role="separator" aria-orientation="horizontal"
+            aria-label="Cambiar el tamaño del panel de resultados" aria-valuemin="0" tabindex="0"
+            title="Arrastra para cambiar el tamaño · doble clic para minimizar/restaurar"></div>
 
           <!-- Panel de Resultados / Consola -->
           <div class="results-pane">
@@ -528,6 +534,8 @@
   <script src="js/converter-ui.js"></script>
   <!-- Constructor visual de consultas -->
   <script src="js/query-builder.js"></script>
+  <!-- Divisor redimensionable editor / resultados -->
+  <script src="js/panel-resizer.js"></script>
 </body>
 
 </html>
