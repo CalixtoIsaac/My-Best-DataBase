@@ -199,7 +199,7 @@ El sistema sigue una arquitectura cliente-servidor de tres capas:
 1. **Obtener el código fuente.**
 
    ```bash
-   git clone https://github.com/[usuario]/My-Best-DataBase.git
+   git clone https://github.com/CalixtoIsaac/My-Best-DataBase
    cd My-Best-DataBase
    ```
 
