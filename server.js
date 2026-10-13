@@ -306,7 +306,16 @@ app.post('/api/schema', async (req, res) => {
         CONSTRAINT_NAME
       FROM information_schema.KEY_COLUMN_USAGE
       WHERE TABLE_SCHEMA = ? 
-        AND REFERENCED_TABLE_NAME IS NOT NULL;
+        AND REFERENCED_TABLE_NAME IS NOT NULL
+      ORDER BY TABLE_NAME, CONSTRAINT_NAME, ORDINAL_POSITION;
+    `, [database]);
+
+    // 3. Índices únicos (incluye PRIMARY): sirven para saber si una FK es 1:1 o 1:N
+    const [uniqueRows] = await connection.query(`
+      SELECT TABLE_NAME, INDEX_NAME, COLUMN_NAME
+      FROM information_schema.STATISTICS
+      WHERE TABLE_SCHEMA = ? AND NON_UNIQUE = 0
+      ORDER BY TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX;
     `, [database]);
 
     // Organizar en un mapa de tablas
@@ -328,6 +337,45 @@ app.post('/api/schema', async (req, res) => {
       });
     });
 
+    // Índices únicos agrupados por tabla: { tabla: [[col, col], ...] }
+    const uniqueIdx = {};
+    uniqueRows.forEach(r => {
+      const t = (uniqueIdx[r.TABLE_NAME] = uniqueIdx[r.TABLE_NAME] || {});
+      (t[r.INDEX_NAME] = t[r.INDEX_NAME] || []).push(r.COLUMN_NAME);
+    });
+
+    // Columnas de cada restricción FK (una FK puede ser compuesta)
+    const fkColumns = {};
+    relationsRows.forEach(rel => {
+      const key = rel.TABLE_NAME + '\u0000' + rel.CONSTRAINT_NAME;
+      (fkColumns[key] = fkColumns[key] || []).push(rel.COLUMN_NAME);
+    });
+
+    /**
+     * Cardinalidad de la relación hija -> padre:
+     *  - Lado padre (tabla referenciada): "1" si la FK es NOT NULL, "0..1" si admite NULL.
+     *  - Lado hijo: "0..1" si las columnas de la FK son únicas (1:1), si no "0..N" (1:N).
+     */
+    function cardinalityFor(table, constraint) {
+      const cols = fkColumns[table + '\u0000' + constraint] || [];
+      const tableCols = tablesMap[table] ? tablesMap[table].columns : [];
+      const nullable = cols.some(c => {
+        const col = tableCols.find(x => x.name === c);
+        return col ? col.isNullable : false;
+      });
+      // Es única si algún índice único está formado SOLO por columnas de la FK
+      const unique = Object.values(uniqueIdx[table] || {}).some(idx =>
+        idx.length > 0 && idx.every(c => cols.includes(c))
+      );
+      return {
+        type: unique ? '1:1' : '1:N',
+        parent: nullable ? '0..1' : '1',
+        child: unique ? '0..1' : '0..N',
+        optional: nullable,
+        identifying: (uniqueIdx[table] && uniqueIdx[table].PRIMARY || []).some(c => cols.includes(c))
+      };
+    }
+
     const relations = relationsRows.map(rel => {
       // Marcar columna como foránea
       if (tablesMap[rel.TABLE_NAME]) {
@@ -339,14 +387,28 @@ app.post('/api/schema', async (req, res) => {
         fromColumn: rel.COLUMN_NAME,
         toTable: rel.REFERENCED_TABLE_NAME,
         toColumn: rel.REFERENCED_COLUMN_NAME,
-        constraint: rel.CONSTRAINT_NAME
+        constraint: rel.CONSTRAINT_NAME,
+        cardinality: cardinalityFor(rel.TABLE_NAME, rel.CONSTRAINT_NAME)
       };
+    });
+
+    // Detectar relaciones muchos a muchos (N:M): tablas puente cuya PK está formada
+    // por columnas FK que apuntan a dos tablas distintas
+    const manyToMany = [];
+    Object.values(tablesMap).forEach(t => {
+      const pk = (uniqueIdx[t.name] && uniqueIdx[t.name].PRIMARY) || [];
+      const outgoing = relations.filter(r => r.fromTable === t.name && pk.includes(r.fromColumn));
+      const targets = [...new Set(outgoing.map(r => r.toTable))];
+      if (targets.length === 2 && pk.every(c => outgoing.some(r => r.fromColumn === c))) {
+        manyToMany.push({ junction: t.name, tables: targets });
+      }
     });
 
     return res.json({
       database,
       tables: Object.values(tablesMap),
-      relations
+      relations,
+      manyToMany
     });
   } catch (error) {
     console.error('Error al generar el esquema ER:', error);

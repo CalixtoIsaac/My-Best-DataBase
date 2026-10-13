@@ -1126,6 +1126,7 @@ async function renderERDiagram() {
     }
 
     const { tables, relations } = data;
+    const manyToMany = data.manyToMany || [];
 
     if (!tables || tables.length === 0) {
       canvas.innerHTML = `
@@ -1168,12 +1169,23 @@ async function renderERDiagram() {
         } else if (col.isForeign) {
           badgeHtml = `<span class="er-col-badge badge-fk" title="Clave Foránea">FK</span>`;
         }
+        // Cardinalidad de la FK que sale de esta columna (p. ej. "N:1 → clientes")
+        const outRel = col.isForeign
+          ? relations.find(r => r.fromTable === table.name && r.fromColumn === col.name)
+          : null;
+        if (col.isPrimary && col.isForeign) {
+          badgeHtml += `<span class="er-col-badge badge-fk" title="Clave Foránea">FK</span>`;
+        }
+        const cardHtml = outRel && outRel.cardinality
+          ? `<span class="er-card-chip" title="${UI.escape(erCardinalityText(outRel))}">${outRel.cardinality.type === '1:1' ? '1:1' : 'N:1'} → ${UI.escape(outRel.toTable)}</span>`
+          : '';
 
         html += `
           <div class="er-column-row">
             <div class="er-col-info">
               ${badgeHtml}
               <span class="er-col-name" title="${UI.escape(col.name)}">${UI.escape(col.name)}</span>
+              ${cardHtml}
             </div>
             <span class="er-col-type" title="${UI.escape(col.type)}">${UI.escape(col.type)}</span>
           </div>
@@ -1198,16 +1210,47 @@ async function renderERDiagram() {
           <div>
       `;
 
+      // Agrupar columnas de FKs compuestas en una sola relación
+      const grouped = [];
       relations.forEach(rel => {
+        const g = grouped.find(x => x.fromTable === rel.fromTable && x.constraint === rel.constraint);
+        if (g) { g.fromColumns.push(rel.fromColumn); g.toColumns.push(rel.toColumn); }
+        else grouped.push({ ...rel, fromColumns: [rel.fromColumn], toColumns: [rel.toColumn] });
+      });
+
+      grouped.forEach(rel => {
+        const c = rel.cardinality || { type: '1:N', parent: '1', child: '0..N' };
         html += `
-          <div class="er-relation-tag">
-            <strong style="color: var(--accent-text);">${UI.escape(rel.fromTable)}</strong>.${UI.escape(rel.fromColumn)}
-            <span>➔</span>
-            <strong style="color: var(--success-text);">${UI.escape(rel.toTable)}</strong>.${UI.escape(rel.toColumn)}
+          <div class="er-relation-tag" title="${UI.escape(erCardinalityText(rel))}">
+            <strong style="color: var(--success-text);">${UI.escape(rel.toTable)}</strong>.${UI.escape(rel.toColumns.join(', '))}
+            <span class="er-mult">${UI.escape(c.parent)}</span>
+            <span class="er-rel-line">${c.type === '1:1' ? '────' : '───<'}</span>
+            <span class="er-mult">${UI.escape(c.child)}</span>
+            <strong style="color: var(--accent-text);">${UI.escape(rel.fromTable)}</strong>.${UI.escape(rel.fromColumns.join(', '))}
+            <span class="er-card-type ${c.type === '1:1' ? 'one' : 'many'}">${c.type}</span>
           </div>
         `;
       });
 
+      manyToMany.forEach(m => {
+        html += `
+          <div class="er-relation-tag" title="Relación muchos a muchos resuelta por la tabla puente ${UI.escape(m.junction)}">
+            <strong style="color: var(--success-text);">${UI.escape(m.tables[0])}</strong>
+            <span class="er-rel-line">&gt;──&lt;</span>
+            <strong style="color: var(--success-text);">${UI.escape(m.tables[1])}</strong>
+            <span style="opacity: 0.7;">vía ${UI.escape(m.junction)}</span>
+            <span class="er-card-type nm">N:M</span>
+          </div>
+        `;
+      });
+
+      html += `
+          </div>
+          <div class="er-card-legend">
+            Notación (mín..máx): <b>1</b> = exactamente uno · <b>0..1</b> = cero o uno · <b>0..N</b> = cero o muchos.
+            Una FK que admite NULL hace opcional el lado padre; una FK con índice único (o que es la PK) indica 1:1.
+          </div>
+      `;
       html += `
           </div>
         </div>
@@ -1224,6 +1267,15 @@ async function renderERDiagram() {
     `;
     if (badge) badge.innerText = '';
   }
+}
+
+/** Descripción en palabras de la cardinalidad de una relación (para tooltips). */
+function erCardinalityText(rel) {
+  const c = rel.cardinality || {};
+  const parent = c.parent === '0..1' ? 'cero o un' : 'exactamente un';
+  const child = c.child === '0..1' ? 'cero o un' : 'cero o muchos';
+  return `Cada registro de ${rel.fromTable} pertenece a ${parent} registro de ${rel.toTable}; ` +
+    `cada registro de ${rel.toTable} tiene ${child} registro(s) de ${rel.fromTable} (${c.type || '1:N'}).`;
 }
 
 /**

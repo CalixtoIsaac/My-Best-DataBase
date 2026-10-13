@@ -686,3 +686,38 @@
   padding: 0 12px;
   font-weight: 500;
 }
+/* ---- Cardinalidad en el diagrama ER ---- */
+.er-card-chip {
+  flex-shrink: 0;
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.er-mult {
+  font-family: monospace;
+  font-weight: bold;
+  color: var(--text-main);
+}
+.er-rel-line {
+  font-family: monospace;
+  color: var(--text-muted);
+  letter-spacing: -1px;
+}
+.er-card-type {
+  font-size: 10px;
+  font-weight: bold;
+  padding: 1px 6px;
+  border-radius: 8px;
+  color: #ffffff;
+  background: #3b82f6;
+}
+.er-card-type.one { background: #10b981; }
+.er-card-type.nm { background: #8b5cf6; }
+.er-card-legend {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
